@@ -1,0 +1,6 @@
+numpy>=1.21
+pandas>=1.3
+torch>=1.12
+tqdm>=4.65
+scikit-learn>=1.1
+tensorboard>=2.9
