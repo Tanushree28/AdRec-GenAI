@@ -2,12 +2,18 @@ import argparse
 import json
 import os
 import struct
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+TRAIN_DIR = ROOT_DIR / "train"
+if str(TRAIN_DIR) not in sys.path:
+    sys.path.insert(0, str(TRAIN_DIR))
 
 from dataset import MyTestDataset, save_emb
 from model import BaselineModel

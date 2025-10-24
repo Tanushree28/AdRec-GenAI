@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from dataset import MyDataset
+from dataset import MyDataset, resolve_data_root
 from model import BaselineModel
 
 
@@ -33,6 +33,21 @@ def get_args():
     parser.add_argument('--inference_only', action='store_true')
     parser.add_argument('--state_dict_path', default=None, type=str)
     parser.add_argument('--norm_first', action='store_true')
+    parser.add_argument(
+        '--watch_ratio_threshold',
+        type=float,
+        default=None,
+        help=(
+            'KuaiRec only: minimum watch_ratio required to treat an interaction as positive. '
+            'Set 2.0 to mimic the official like-signal heuristic.'
+        ),
+    )
+
+    parser.add_argument(
+        '--data_path',
+        default=None,
+        help='Root directory containing the Tencent preprocessed files or KuaiRec CSV bundle.',
+    )
 
     # MMemb Feature ID
     parser.add_argument('--mm_emb_id', nargs='+', default=['82'], type=str, choices=[str(s) for s in range(81, 87)])
@@ -48,11 +63,54 @@ if __name__ == '__main__':
     Path(os.environ.get('TRAIN_TF_EVENTS_PATH', './events')).mkdir(parents=True, exist_ok=True)
     log_file = open(Path(os.environ.get('TRAIN_LOG_PATH', './logs'), 'train.log'), 'w')
     writer = SummaryWriter(os.environ.get('TRAIN_TF_EVENTS_PATH'))
-    # global dataset
-    data_path = os.environ.get('TRAIN_DATA_PATH','../TencentGR_1k/TencentGR_1k/')
-
     args = get_args()
-    dataset = MyDataset(data_path, args)
+    data_root = resolve_data_root(data_path=args.data_path)
+    resolved_path = data_root.resolve() if data_root.exists() else data_root
+    print(f'Using dataset root: {resolved_path}')
+    if args.watch_ratio_threshold is not None:
+        print(f'Applying KuaiRec watch_ratio_threshold={args.watch_ratio_threshold}')
+
+    dataset = MyDataset(str(data_root), args)
+    print(
+        f"Loaded {dataset.dataset_type} dataset with {len(dataset)} user sequence(s), "
+        f"{dataset.usernum if hasattr(dataset, 'usernum') else 'unknown'} users, "
+        f"{dataset.itemnum if hasattr(dataset, 'itemnum') else 'unknown'} items.",
+        flush=True,
+    )
+    if dataset.dataset_type == 'kuairec':
+        raw_rows = getattr(dataset, 'kuairec_rows_raw', None)
+        kept_rows = getattr(dataset, 'kuairec_rows_after_filter', None)
+        dropna_rows = getattr(dataset, 'kuairec_rows_after_dropna', None)
+        filtered_rows = getattr(dataset, 'kuairec_rows_filtered_by_threshold', None)
+        sequence_events = getattr(dataset, 'kuairec_sequence_event_count', None)
+        if raw_rows is not None and kept_rows is not None:
+            print(
+                f"KuaiRec interactions kept for training: {kept_rows} / {raw_rows} rows.",
+                flush=True,
+            )
+        if dropna_rows is not None and raw_rows is not None:
+            dropped_missing = raw_rows - dropna_rows
+            if dropped_missing:
+                print(
+                    f"  • Dropped {dropped_missing} rows with missing user/item IDs.",
+                    flush=True,
+                )
+        if filtered_rows is not None and filtered_rows > 0:
+            threshold = getattr(dataset, 'kuairec_watch_ratio_threshold', None)
+            suffix = f" (watch_ratio_threshold={threshold})" if threshold is not None else ''
+            print(
+                f"  • Filtered out {filtered_rows} low-engagement rows{suffix}.",
+                flush=True,
+            )
+        if sequence_events is not None:
+            print(
+                f"User sequences contain {sequence_events} chronological interactions after preprocessing.",
+                flush=True,
+            )
+        print(
+            "Training objective: sequential next-item InfoNCE with in-batch negatives (identical to the Tencent pipeline).",
+            flush=True,
+        )
     train_dataset, valid_dataset = torch.utils.data.random_split(dataset, [0.9, 0.1])
     train_loader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=dataset.collate_fn
