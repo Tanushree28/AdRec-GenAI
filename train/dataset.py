@@ -901,3 +901,141 @@ def load_mm_emb(mm_path, feat_ids):
         mm_emb_dict[feat_id] = emb_dict
         print(f'Loaded #{feat_id} mm_emb')
     return mm_emb_dict
+
+
+def _resolve_data_root(cli_args):
+    script_dir = Path(__file__).resolve().parent
+    if cli_args.data_path is not None:
+        return Path(cli_args.data_path)
+
+    from os import environ
+
+    env_path = None if cli_args.no_env else environ.get("TRAIN_DATA_PATH")
+    if env_path:
+        return Path(env_path)
+
+    candidate_roots = [
+        Path("./data"),
+        script_dir / "data",
+        script_dir.parent / "data",
+        Path("./dataset"),
+        script_dir / "dataset",
+        script_dir.parent / "dataset",
+    ]
+    for candidate in candidate_roots:
+        if candidate.exists():
+            return candidate
+        if (candidate / "KuaiRec").exists():
+            return candidate / "KuaiRec"
+    return candidate_roots[0]
+
+
+def main():
+    import argparse
+    import traceback
+    from types import SimpleNamespace
+
+    import sys
+
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except AttributeError:
+        pass
+
+    parser = argparse.ArgumentParser(description="Inspect dataset loading and derived features.")
+    parser.add_argument(
+        "--data-path",
+        default=None,
+        help="Root directory that contains the Tencent preprocessed files or KuaiRec CSVs.",
+    )
+    parser.add_argument("--maxlen", type=int, default=100, help="Maximum sequence length to keep per user.")
+    parser.add_argument(
+        "--mm-emb-id",
+        nargs="*",
+        default=[],
+        help="Tencent only: multimedia embedding feature IDs to load (e.g. 82 83).",
+    )
+    parser.add_argument(
+        "--sample-users",
+        type=int,
+        default=3,
+        help="How many sample sequences to summarise after loading the dataset.",
+    )
+    parser.add_argument(
+        "--show-features",
+        action="store_true",
+        help="Print the derived feature groups (sparse/array/continual) detected for the dataset.",
+    )
+    parser.add_argument(
+        "--no-env",
+        action="store_true",
+        help="Ignore TRAIN_DATA_PATH from the environment and rely on --data-path only.",
+    )
+
+    cli_args = parser.parse_args()
+    data_root = Path(_resolve_data_root(cli_args))
+    resolved_path = data_root.resolve() if data_root.exists() else data_root
+    print(f"Inspecting data root: {resolved_path}", flush=True)
+
+    runtime_args = SimpleNamespace(maxlen=cli_args.maxlen, mm_emb_id=cli_args.mm_emb_id)
+
+    try:
+        dataset = MyDataset(str(data_root), runtime_args)
+    except FileNotFoundError as err:
+        print(f"\n❌ {err}")
+        print("Provide the KuaiRec/Tencent files via --data-path or set TRAIN_DATA_PATH before running this helper.")
+        return 1
+    except Exception:
+        print("\n❌ Unexpected error while loading the dataset:")
+        traceback.print_exc()
+        return 1
+
+    print("Dataset initialised successfully.\n", flush=True)
+
+    print(f"Detected dataset type: {dataset.dataset_type}")
+    user_count = getattr(dataset, "usernum", len(dataset))
+    item_count = getattr(dataset, "itemnum", "unknown")
+    print(f"Users: {user_count}  Items: {item_count}  User sequences: {len(dataset)}")
+
+    if cli_args.show_features and getattr(dataset, "feature_types", None):
+        print("\nDerived feature groups:")
+        for group, feature_ids in dataset.feature_types.items():
+            print(f"  - {group}: {len(feature_ids)} feature(s)")
+
+    if len(dataset) == 0:
+        print("\nThe dataset is empty—no user sequences were loaded.")
+        return 0
+
+    print("\nSample sequences:")
+    sample_total = min(cli_args.sample_users, len(dataset))
+    for idx in range(sample_total):
+        sample = dataset[idx]
+        (
+            seq,
+            pos,
+            neg,
+            token_type,
+            next_token_type,
+            next_action_type,
+            seq_feat,
+            pos_feat,
+            neg_feat,
+        ) = sample
+
+        seq = np.asarray(seq)
+        pos = np.asarray(pos)
+
+        history_len = int(np.count_nonzero(seq))
+        positives = pos[pos > 0]
+        next_item_id = int(positives[-1]) if positives.size else 0
+        original_item = dataset.indexer_i_rev.get(next_item_id, "n/a") if next_item_id else "n/a"
+        print(
+            f"  • User #{idx}: history length={history_len}, next positive item id={next_item_id} (original={original_item})"
+        )
+
+    print("\nUse python train/main.py to launch full training once the dataset looks correct.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
