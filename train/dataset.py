@@ -44,133 +44,59 @@ class MyDataset(torch.utils.data.Dataset):
         self.maxlen = args.maxlen
         self.dataset_type = self._detect_dataset_type()
 
-        # KuaiRec-specific bookkeeping so downstream logs can explain how many
-        # rows contribute to the training sequences.  These remain ``None`` for
-        # Tencent data.
-        self.kuairec_rows_raw = None
-        self.kuairec_rows_after_dropna = None
-        self.kuairec_rows_after_filter = None
-        self.kuairec_rows_filtered_by_threshold = None
-        self.kuairec_sequences = None
-        self.kuairec_sequence_event_count = None
-
-        if self.dataset_type == 'kuairec':
-            if getattr(args, 'mm_emb_id', None):
-                print('KuaiRec dataset detected: ignoring provided mm_emb_id settings.')
+        if self.dataset_type == "kuairec":
+            if getattr(args, "mm_emb_id", None):
+                print("KuaiRec dataset detected: ignoring provided mm_emb_id settings.")
             self.mm_emb_ids = []
-            threshold = getattr(args, 'watch_ratio_threshold', None)
-            if threshold is not None:
-                try:
-                    self.kuairec_watch_ratio_threshold = float(threshold)
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"Invalid watch_ratio_threshold={threshold!r}; expected a numeric value."
-                    )
-            else:
-                self.kuairec_watch_ratio_threshold = None
         else:
             self.mm_emb_ids = args.mm_emb_id
 
         self._load_data_and_offsets()
 
-        if self.dataset_type == 'tencent':
-            self.item_feat_dict = json.load(open(Path(data_dir, "item_feat_dict.json"), 'r'))
-            self.mm_emb_dict = load_mm_emb(Path(data_dir, "creative_emb"), self.mm_emb_ids)
-            with open(self.data_dir / 'indexer.pkl', 'rb') as ff:
+        if self.dataset_type == "tencent":
+            self.item_feat_dict = json.load(
+                open(Path(data_dir, "item_feat_dict.json"), "r")
+            )
+            self.mm_emb_dict = load_mm_emb(
+                Path(data_dir, "creative_emb"), self.mm_emb_ids
+            )
+            with open(self.data_dir / "indexer.pkl", "rb") as ff:
                 indexer = pickle.load(ff)
-                self.itemnum = len(indexer['i'])
-                self.usernum = len(indexer['u'])
-            self.indexer_i_rev = {v: k for k, v in indexer['i'].items()}
-            self.indexer_u_rev = {v: k for k, v in indexer['u'].items()}
+                self.itemnum = len(indexer["i"])
+                self.usernum = len(indexer["u"])
+            self.indexer_i_rev = {v: k for k, v in indexer["i"].items()}
+            self.indexer_u_rev = {v: k for k, v in indexer["u"].items()}
             self.indexer = indexer
-            self.feature_default_value, self.feature_types, self.feat_statistics = self._init_feat_info()
+            self.feature_default_value, self.feature_types, self.feat_statistics = (
+                self._init_feat_info()
+            )
 
     def _detect_dataset_type(self):
         if (self.data_dir / "seq.jsonl").exists():
-            return 'tencent'
+            return "tencent"
         if (self.data_dir / "predict_seq.jsonl").exists():
-            return 'tencent'
-
-        kuai_root = self._locate_kuairec_root()
-        if kuai_root is not None:
-            self.kuairec_root = kuai_root
-            origin = 'Google Drive' if str(kuai_root).startswith('/content/drive') else 'local storage'
-            print(
-                f"Detected KuaiRec dataset under {kuai_root.resolve() if kuai_root.exists() else kuai_root} "
-                f"({origin}).",
-                flush=True,
-            )
-            return 'kuairec'
+            return "tencent"
+        candidate_dirs = [self.data_dir]
+        if (self.data_dir / "data").exists():
+            candidate_dirs.append(self.data_dir / "data")
+        for candidate in candidate_dirs:
+            if (candidate / "small_matrix.csv").exists() or (
+                candidate / "big_matrix.csv"
+            ).exists():
+                self.kuairec_root = candidate
+                return "kuairec"
         raise FileNotFoundError(
             f"Unable to detect dataset format under {self.data_dir}. Expected Tencent preprocessed files or KuaiRec CSVs."
         )
-
-    def _locate_kuairec_root(self):
-        candidates = [self.data_dir]
-        data_subdir = self.data_dir / 'data'
-        if data_subdir.exists():
-            candidates.append(data_subdir)
-
-        # Common pattern: repo_root/dataset/KuaiRec[/data]
-        dataset_root = self.data_dir / 'dataset'
-        if dataset_root.exists():
-            candidates.append(dataset_root)
-        kuai_from_dataset = dataset_root / 'KuaiRec'
-        if kuai_from_dataset.exists():
-            candidates.append(kuai_from_dataset)
-            kuai_data = kuai_from_dataset / 'data'
-            if kuai_data.exists():
-                candidates.append(kuai_data)
-
-        # Allow walking up one level to discover ./data/KuaiRec style layouts when invoked
-        # from repo_root/train/.
-        parent_data = self.data_dir.parent / 'data'
-        if parent_data.exists():
-            candidates.append(parent_data)
-            parent_kuai = parent_data / 'KuaiRec'
-            if parent_kuai.exists():
-                candidates.append(parent_kuai)
-                parent_kuai_data = parent_kuai / 'data'
-                if parent_kuai_data.exists():
-                    candidates.append(parent_kuai_data)
-
-        # Common Google Drive mount points for notebooks / VS Code remote sessions
-        drive_root = Path("/content/drive/MyDrive/datasets/KuaiRec")
-        if drive_root.exists():
-            candidates.append(drive_root)
-            drive_data = drive_root / 'data'
-            if drive_data.exists():
-                candidates.append(drive_data)
-
-        # Expand each candidate with embedded KuaiRec subdirectories to cover
-        # structures such as data/KuaiRec/data/...
-        expanded_candidates = []
-        for candidate in candidates:
-            expanded_candidates.append(candidate)
-            expanded_candidates.append(candidate / 'KuaiRec')
-            expanded_candidates.append(candidate / 'KuaiRec' / 'data')
-
-        for candidate in expanded_candidates:
-            if (candidate / 'small_matrix.csv').exists() or (candidate / 'big_matrix.csv').exists():
-                return candidate
-        return None
 
     def _load_data_and_offsets(self):
         """
         加载用户序列数据和每一行的文件偏移量(预处理好的), 用于快速随机访问数据并I/O
         """
-        if self.dataset_type == 'tencent':
-            print(
-                f"Loading Tencent interaction sequences from {self.data_dir / 'seq.jsonl'}...",
-                flush=True,
-            )
-            self.data_file = open(self.data_dir / "seq.jsonl", 'rb')
-            with open(Path(self.data_dir, 'seq_offsets.pkl'), 'rb') as f:
+        if self.dataset_type == "tencent":
+            self.data_file = open(self.data_dir / "seq.jsonl", "rb")
+            with open(Path(self.data_dir, "seq_offsets.pkl"), "rb") as f:
                 self.seq_offsets = pickle.load(f)
-            print(
-                f"Loaded {len(self.seq_offsets)} Tencent user offsets.",
-                flush=True,
-            )
         else:
             self._load_kuairec_dataset()
 
@@ -184,7 +110,7 @@ class MyDataset(torch.utils.data.Dataset):
         Returns:
             data: 用户序列数据，格式为[(user_id, item_id, user_feat, item_feat, action_type, timestamp)]
         """
-        if self.dataset_type == 'tencent':
+        if self.dataset_type == "tencent":
             self.data_file.seek(self.seq_offsets[uid])
             line = self.data_file.readline()
             data = json.loads(line)
@@ -193,73 +119,82 @@ class MyDataset(torch.utils.data.Dataset):
         return self.user_sequences[user_reid]
 
     def _load_kuairec_dataset(self):
-        csv_root = getattr(self, 'kuairec_root', self.data_dir)
-        tables = self._load_raw_kuairec_tables(csv_root)
+        data_root = getattr(self, "kuairec_root", self.data_dir)
+        if not data_root.exists():
+            data_root = self.data_dir
 
-        raw_interactions = tables['interactions']
-        self.kuairec_rows_raw = len(raw_interactions)
-        interactions = raw_interactions.copy()
-        data_root = tables['resolved_root']
+        interaction_path = data_root / "small_matrix.csv"
+        if not interaction_path.exists():
+            interaction_path = data_root / "big_matrix.csv"
+        if not interaction_path.exists():
+            raise FileNotFoundError(f"KuaiRec dataset not found under {data_root}.")
 
-        user_col = self._find_column(interactions.columns, ['user_id', 'userid', 'uid'])
-        item_col = self._find_column(interactions.columns, ['item_id', 'video_id', 'iid', 'cid'])
+        interactions = pd.read_csv(interaction_path)
+
+        user_col = self._find_column(interactions.columns, ["user_id", "userid", "uid"])
+        item_col = self._find_column(
+            interactions.columns, ["item_id", "video_id", "iid", "cid"]
+        )
         if user_col is None or item_col is None:
-            raise ValueError('KuaiRec interactions must contain user and item identifier columns.')
+            raise ValueError(
+                "KuaiRec interactions must contain user and item identifier columns."
+            )
 
-        time_col = self._find_column(interactions.columns, ['timestamp', 'time', 'datetime'])
+        time_col = self._find_column(
+            interactions.columns, ["timestamp", "time", "datetime"]
+        )
         action_col = self._find_column(
             interactions.columns,
-            ['is_click', 'click', 'finish', 'like', 'view', 'watch', 'play', 'interaction'],
+            [
+                "is_click",
+                "click",
+                "finish",
+                "like",
+                "view",
+                "watch",
+                "play",
+                "interaction",
+            ],
         )
 
-        interactions = interactions.dropna(subset=[user_col, item_col]).copy()
-        self.kuairec_rows_after_dropna = len(interactions)
+        interactions = interactions.dropna(subset=[user_col, item_col])
         interactions[user_col] = interactions[user_col].astype(str)
         interactions[item_col] = interactions[item_col].astype(str)
-
-        if action_col and getattr(self, 'kuairec_watch_ratio_threshold', None) is not None:
-            numeric_actions = pd.to_numeric(interactions[action_col], errors='coerce')
-            before = len(interactions)
-            interactions = interactions[numeric_actions >= self.kuairec_watch_ratio_threshold]
-            kept = len(interactions)
-            self.kuairec_rows_filtered_by_threshold = before - kept
-            print(
-                "Filtered KuaiRec interactions "
-                f"using {action_col}>={self.kuairec_watch_ratio_threshold}: kept {kept} of {before} rows.",
-                flush=True,
-            )
-            interactions = interactions.copy()
-            interactions[action_col] = numeric_actions.loc[interactions.index].fillna(0)
-        else:
-            kept = len(interactions)
-            self.kuairec_rows_filtered_by_threshold = 0
-
-        self.kuairec_rows_after_filter = kept
 
         user_ids = sorted(interactions[user_col].unique())
         item_ids = sorted(interactions[item_col].unique())
         user2reid = {user_id: idx + 1 for idx, user_id in enumerate(user_ids)}
         item2reid = {item_id: idx + 1 for idx, item_id in enumerate(item_ids)}
 
-        user_feat_df = tables.get('user_features')
-        if user_feat_df is not None:
-            user_feat_col = self._find_column(user_feat_df.columns, ['user_id', 'userid', 'uid'])
+        user_feat_path = data_root / "user_features.csv"
+        if user_feat_path.exists():
+            user_feat_df = pd.read_csv(user_feat_path)
+            user_feat_col = self._find_column(
+                user_feat_df.columns, ["user_id", "userid", "uid"]
+            )
             if user_feat_col is not None:
                 user_feat_df[user_feat_col] = user_feat_df[user_feat_col].astype(str)
-                user_feat_df = user_feat_df.drop_duplicates(subset=[user_feat_col]).set_index(user_feat_col)
+                user_feat_df = user_feat_df.drop_duplicates(
+                    subset=[user_feat_col]
+                ).set_index(user_feat_col)
             else:
                 user_feat_df = pd.DataFrame()
         else:
             user_feat_df = pd.DataFrame()
 
-        item_cat_df = tables.get('item_categories')
-        if item_cat_df is not None:
-            item_feat_col = self._find_column(item_cat_df.columns, ['item_id', 'video_id', 'iid', 'cid'])
+        item_cat_path = data_root / "item_categories.csv"
+        if item_cat_path.exists():
+            item_cat_df = pd.read_csv(item_cat_path)
+            item_feat_col = self._find_column(
+                item_cat_df.columns, ["item_id", "video_id", "iid", "cid"]
+            )
             if item_feat_col is not None:
                 item_cat_df[item_feat_col] = item_cat_df[item_feat_col].astype(str)
                 item_cat_df = item_cat_df.drop_duplicates(subset=[item_feat_col])
-                if 'feat' in item_cat_df.columns:
-                    item_cat_df['feat'] = item_cat_df['feat'].apply(lambda x: self._parse_possible_list(x) or [])
+                if "feat" in item_cat_df.columns:
+                    item_cat_df["feat"] = item_cat_df["feat"].apply(
+                        lambda x: self._parse_possible_list(x) or []
+                    )
                 if item_feat_col != item_col:
                     item_cat_df = item_cat_df.rename(columns={item_feat_col: item_col})
             else:
@@ -274,12 +209,16 @@ class MyDataset(torch.utils.data.Dataset):
             exclude_cols.add(action_col)
         extra_cols = [col for col in interactions.columns if col not in exclude_cols]
         if extra_cols:
-            item_extra_df = interactions.groupby(item_col)[extra_cols].first().reset_index()
+            item_extra_df = (
+                interactions.groupby(item_col)[extra_cols].first().reset_index()
+            )
         else:
             item_extra_df = pd.DataFrame(columns=[item_col])
 
         if not item_cat_df.empty and not item_extra_df.empty:
-            item_feature_df = pd.merge(item_cat_df, item_extra_df, on=item_col, how='outer')
+            item_feature_df = pd.merge(
+                item_cat_df, item_extra_df, on=item_col, how="outer"
+            )
         elif not item_cat_df.empty:
             item_feature_df = item_cat_df.copy()
         else:
@@ -294,16 +233,16 @@ class MyDataset(torch.utils.data.Dataset):
         self.usernum = len(user2reid)
         self.indexer_i_rev = {v: k for k, v in item2reid.items()}
         self.indexer_u_rev = {v: k for k, v in user2reid.items()}
-        self.indexer = {'i': item2reid, 'u': user2reid, 'f': {}}
+        self.indexer = {"i": item2reid, "u": user2reid, "f": {}}
 
         self.feature_types = {
-            'user_sparse': [],
-            'item_sparse': [],
-            'user_array': [],
-            'item_array': [],
-            'user_continual': [],
-            'item_continual': [],
-            'item_emb': [],
+            "user_sparse": [],
+            "item_sparse": [],
+            "user_array": [],
+            "item_array": [],
+            "user_continual": [],
+            "item_continual": [],
+            "item_emb": [],
         }
         self.feature_default_value = {}
         self.feat_statistics = {}
@@ -313,57 +252,49 @@ class MyDataset(torch.utils.data.Dataset):
         self.kuairec_item_column2feat = {}
 
         # Ensure bias features exist so each record retains user/item entries
-        self.feature_types['user_continual'].append('u_bias')
-        self.feature_default_value['u_bias'] = 0.0
-        self.indexer['f']['u_bias'] = {}
-        self.feature_types['item_continual'].append('i_bias')
-        self.feature_default_value['i_bias'] = 0.0
-        self.indexer['f']['i_bias'] = {}
+        self.feature_types["user_continual"].append("u_bias")
+        self.feature_default_value["u_bias"] = 0.0
+        self.indexer["f"]["u_bias"] = {}
+        self.feature_types["item_continual"].append("i_bias")
+        self.feature_default_value["i_bias"] = 0.0
+        self.indexer["f"]["i_bias"] = {}
 
         if not user_feat_df.empty:
             for column in user_feat_df.columns:
                 series = user_feat_df[column]
                 if series.dropna().empty:
                     continue
-                feat_id = f'u_{column}'
-                spec = self._analyze_feature_series(series, 'user', column)
+                feat_id = f"u_{column}"
+                spec = self._analyze_feature_series(series, "user", column)
                 if spec is None:
                     continue
                 self.kuairec_user_column2feat[column] = feat_id
-                self._register_feature_spec(feat_id, 'user', spec)
-            print(
-                "Registered "
-                f"{len(self.kuairec_user_column2feat)} KuaiRec user feature column(s).",
-                flush=True,
-            )
+                self._register_feature_spec(feat_id, "user", spec)
 
         if not item_feature_df.empty:
             for column in item_feature_df.columns:
                 series = item_feature_df[column]
                 if isinstance(series, pd.Series) and series.dropna().empty:
                     continue
-                feat_id = f'i_{column}'
-                spec = self._analyze_feature_series(series, 'item', column)
+                feat_id = f"i_{column}"
+                spec = self._analyze_feature_series(series, "item", column)
                 if spec is None:
                     continue
                 self.kuairec_item_column2feat[column] = feat_id
-                self._register_feature_spec(feat_id, 'item', spec)
-            print(
-                "Registered "
-                f"{len(self.kuairec_item_column2feat)} KuaiRec item feature column(s).",
-                flush=True,
-            )
+                self._register_feature_spec(feat_id, "item", spec)
 
         self.user_feature_lookup = {}
         for user_id, user_reid in user2reid.items():
-            feat_dict = {'u_bias': 1.0}
+            feat_dict = {"u_bias": 1.0}
             if not user_feat_df.empty and user_id in user_feat_df.index:
                 row = user_feat_df.loc[user_id]
                 if isinstance(row, pd.DataFrame):
                     row = row.iloc[0]
                 for column, feat_id in self.kuairec_user_column2feat.items():
                     value = row[column]
-                    encoded = self._encode_feature_value(value, feat_id, self.kuairec_user_feature_specs)
+                    encoded = self._encode_feature_value(
+                        value, feat_id, self.kuairec_user_feature_specs
+                    )
                     if encoded is not None:
                         feat_dict[feat_id] = encoded
             self.user_feature_lookup[user_reid] = feat_dict
@@ -371,27 +302,30 @@ class MyDataset(torch.utils.data.Dataset):
         self.item_feat_dict = {}
         if not item_feature_df.empty:
             for item_id, item_reid in item2reid.items():
-                feat_dict = {'i_bias': 1.0}
+                feat_dict = {"i_bias": 1.0}
                 if item_id in item_feature_df.index:
                     row = item_feature_df.loc[item_id]
                     if isinstance(row, pd.DataFrame):
                         row = row.iloc[0]
                     for column, feat_id in self.kuairec_item_column2feat.items():
                         value = row[column]
-                        encoded = self._encode_feature_value(value, feat_id, self.kuairec_item_feature_specs)
+                        encoded = self._encode_feature_value(
+                            value, feat_id, self.kuairec_item_feature_specs
+                        )
                         if encoded is not None:
                             feat_dict[feat_id] = encoded
                 self.item_feat_dict[str(item_reid)] = feat_dict
         else:
             for item_id, item_reid in item2reid.items():
-                self.item_feat_dict[str(item_reid)] = {'i_bias': 1.0}
+                self.item_feat_dict[str(item_reid)] = {"i_bias": 1.0}
 
         self.user_sequences = {}
-        sorted_interactions = interactions if not time_col else interactions.sort_values(time_col)
-        total_events = 0
+        sorted_interactions = (
+            interactions if not time_col else interactions.sort_values(time_col)
+        )
         for user_id, group in sorted_interactions.groupby(user_col):
             user_reid = user2reid[user_id]
-            user_feat = self.user_feature_lookup.get(user_reid, {'u_bias': 1.0})
+            user_feat = self.user_feature_lookup.get(user_reid, {"u_bias": 1.0})
             seq_records = []
             ordered_group = group if time_col is None else group.sort_values(time_col)
             for order, (_, row) in enumerate(ordered_group.iterrows()):
@@ -399,110 +333,28 @@ class MyDataset(torch.utils.data.Dataset):
                 if item_id not in item2reid:
                     continue
                 item_reid = item2reid[item_id]
-                item_feat = self.item_feat_dict.get(str(item_reid), {'i_bias': 1.0})
+                item_feat = self.item_feat_dict.get(str(item_reid), {"i_bias": 1.0})
                 action_value = self._extract_action_value(row, action_col)
                 timestamp = self._extract_timestamp(row, time_col, order)
-                seq_records.append((user_reid, item_reid, dict(user_feat), dict(item_feat), action_value, timestamp))
+                seq_records.append(
+                    (
+                        user_reid,
+                        item_reid,
+                        dict(user_feat),
+                        dict(item_feat),
+                        action_value,
+                        timestamp,
+                    )
+                )
             if seq_records:
                 self.user_sequences[user_reid] = seq_records
-                total_events += len(seq_records)
 
         self.uid_list = sorted(self.user_sequences.keys())
         self.seq_offsets = list(range(len(self.uid_list)))
 
         print(
-            f"Finished KuaiRec ingest: {self.usernum} users, {self.itemnum} items, "
-            f"{len(self.user_sequences)} user sequence(s).",
-            flush=True,
+            f"Loaded KuaiRec interactions from {interaction_path} with {self.usernum} users and {self.itemnum} items."
         )
-
-        self.kuairec_sequences = len(self.user_sequences)
-        self.kuairec_sequence_event_count = total_events
-
-    def _load_raw_kuairec_tables(self, csv_root):
-        data_root = Path(csv_root)
-        if not data_root.exists():
-            raise FileNotFoundError(f"KuaiRec dataset not found under {csv_root}.")
-
-        # Prefer nested "data" directory when present to mirror the upstream release.
-        if (data_root / 'data').exists():
-            data_root = data_root / 'data'
-
-        print(f"Resolving KuaiRec CSV bundle from {data_root.resolve()}...", flush=True)
-
-        tables = {'resolved_root': data_root}
-
-        def read_csv(name, friendly):
-            path = data_root / f"{name}.csv"
-            if not path.exists():
-                return None
-            print(f"Loading {friendly}...", flush=True)
-            df = pd.read_csv(path)
-            tables[name] = df
-            return df
-
-        big_matrix = read_csv('big_matrix', 'big matrix')
-        small_matrix = read_csv('small_matrix', 'small matrix')
-        interactions = small_matrix if small_matrix is not None else big_matrix
-        if interactions is None:
-            raise FileNotFoundError(
-                f"KuaiRec interactions missing under {data_root}. Expected small_matrix.csv or big_matrix.csv."
-            )
-
-        social_network = read_csv('social_network', 'social network')
-        if social_network is not None and 'friend_list' in social_network.columns:
-            social_network['friend_list'] = social_network['friend_list'].apply(
-                lambda x: self._safe_literal_eval(x, default=[])
-            )
-
-        item_categories = read_csv('item_categories', 'item features')
-        if item_categories is not None and 'feat' in item_categories.columns:
-            item_categories['feat'] = item_categories['feat'].apply(
-                lambda x: self._safe_literal_eval(x, default=[])
-            )
-
-        read_csv('user_features', 'user features')
-        read_csv('item_daily_features', "items' daily features")
-
-        tables['interactions'] = interactions
-
-        # Emit the same summary as the reference notebook helper for transparency.
-        print("\nDataset Summary:")
-        if big_matrix is not None:
-            print(f"  • Big matrix shape: {big_matrix.shape}")
-        if small_matrix is not None:
-            print(f"  • Small matrix shape: {small_matrix.shape}")
-        if social_network is not None:
-            print(f"  • Users in social network: {len(social_network)}")
-        if item_categories is not None:
-            print(f"  • Item features: {len(item_categories)}")
-        user_features = tables.get('user_features')
-        if user_features is not None:
-            print(f"  • User features: {len(user_features)}")
-        item_daily = tables.get('item_daily_features')
-        if item_daily is not None:
-            print(f"  • Item daily features: {len(item_daily)}")
-
-        print("\n📊 Sample data preview:")
-        preview = interactions.head(3)
-        with pd.option_context('display.max_columns', None):
-            print(preview)
-
-        print("✅ All KuaiRec CSVs loaded successfully!", flush=True)
-
-        return tables
-
-    @staticmethod
-    def _safe_literal_eval(value, default=None):
-        if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped:
-                return default
-            try:
-                return ast.literal_eval(stripped)
-            except (ValueError, SyntaxError):
-                return default
-        return value if value is not None else default
 
     @staticmethod
     def _find_column(columns, candidates):
@@ -518,7 +370,7 @@ class MyDataset(torch.utils.data.Dataset):
             trimmed = value.strip()
             if not trimmed:
                 return []
-            if trimmed[0] in {'[', '{', '('} and trimmed[-1] in {']', '}', ')'}:
+            if trimmed[0] in {"[", "{", "("} and trimmed[-1] in {"]", "}", ")"}:
                 try:
                     parsed = ast.literal_eval(trimmed)
                 except (ValueError, SyntaxError):
@@ -579,32 +431,32 @@ class MyDataset(torch.utils.data.Dataset):
             if not tokens:
                 return None
             mapping = {token: idx + 1 for idx, token in enumerate(sorted(tokens))}
-            return {'type': 'array', 'mapping': mapping, 'default': [0]}
+            return {"type": "array", "mapping": mapping, "default": [0]}
 
         unique_count = non_null.nunique(dropna=True)
         max_sparse_threshold = 200
         if non_null.dtype == object or unique_count <= max_sparse_threshold:
             unique_tokens = sorted(set(non_null.astype(str)))
             mapping = {token: idx + 1 for idx, token in enumerate(unique_tokens)}
-            return {'type': 'sparse', 'mapping': mapping, 'default': 0}
+            return {"type": "sparse", "mapping": mapping, "default": 0}
 
-        return {'type': 'continual', 'mapping': None, 'default': 0.0}
+        return {"type": "continual", "mapping": None, "default": 0.0}
 
     def _register_feature_spec(self, feat_id, scope, spec):
-        feature_type = spec['type']
+        feature_type = spec["type"]
         key = f"{scope}_{feature_type}"
         if key not in self.feature_types:
             self.feature_types[key] = []
         if feat_id not in self.feature_types[key]:
             self.feature_types[key].append(feat_id)
-        self.feature_default_value[feat_id] = spec['default']
-        if spec['mapping'] is not None:
-            self.indexer['f'][feat_id] = spec['mapping']
-            self.feat_statistics[feat_id] = len(spec['mapping'])
+        self.feature_default_value[feat_id] = spec["default"]
+        if spec["mapping"] is not None:
+            self.indexer["f"][feat_id] = spec["mapping"]
+            self.feat_statistics[feat_id] = len(spec["mapping"])
         else:
-            self.indexer['f'][feat_id] = {}
+            self.indexer["f"][feat_id] = {}
 
-        if scope == 'user':
+        if scope == "user":
             self.kuairec_user_feature_specs[feat_id] = spec
         else:
             self.kuairec_item_feature_specs[feat_id] = spec
@@ -616,18 +468,18 @@ class MyDataset(torch.utils.data.Dataset):
         if value is None or (isinstance(value, float) and np.isnan(value)):
             return None
 
-        feature_type = spec['type']
-        if feature_type == 'continual':
+        feature_type = spec["type"]
+        if feature_type == "continual":
             try:
                 return float(value)
             except (TypeError, ValueError):
                 return None
 
-        if feature_type == 'sparse':
+        if feature_type == "sparse":
             key = str(value)
-            return spec['mapping'].get(key, 0)
+            return spec["mapping"].get(key, 0)
 
-        if feature_type == 'array':
+        if feature_type == "array":
             parsed = self._parse_possible_list(value)
             if parsed is None:
                 if isinstance(value, dict):
@@ -636,7 +488,11 @@ class MyDataset(torch.utils.data.Dataset):
                     parsed = list(value)
                 else:
                     parsed = [value]
-            encoded = [spec['mapping'].get(str(token), 0) for token in parsed if token is not None]
+            encoded = [
+                spec["mapping"].get(str(token), 0)
+                for token in parsed
+                if token is not None
+            ]
             return encoded if encoded else [0]
 
         return None
@@ -653,9 +509,9 @@ class MyDataset(torch.utils.data.Dataset):
             stripped = value.strip().lower()
             if not stripped:
                 return 0
-            if stripped in {'true', 'yes', 'y'}:
+            if stripped in {"true", "yes", "y"}:
                 return 1
-            if stripped in {'false', 'no', 'n'}:
+            if stripped in {"false", "no", "n"}:
                 return 0
             try:
                 value = float(stripped)
@@ -683,7 +539,7 @@ class MyDataset(torch.utils.data.Dataset):
             if not stripped:
                 return fallback
             try:
-                parsed = pd.to_datetime(stripped, errors='coerce')
+                parsed = pd.to_datetime(stripped, errors="coerce")
             except Exception:
                 parsed = None
             if parsed is not None and not pd.isna(parsed):
@@ -774,7 +630,9 @@ class MyDataset(torch.utils.data.Dataset):
                 pos_feat[idx] = next_feat
                 neg_id = self._random_neq(1, self.itemnum + 1, ts)
                 neg[idx] = neg_id
-                neg_feat[idx] = self.fill_missing_feat(self.item_feat_dict[str(neg_id)], neg_id)
+                neg_feat[idx] = self.fill_missing_feat(
+                    self.item_feat_dict[str(neg_id)], neg_id
+                )
             nxt = record_tuple
             idx -= 1
             if idx == -1:
@@ -784,7 +642,17 @@ class MyDataset(torch.utils.data.Dataset):
         pos_feat = np.where(pos_feat == None, self.feature_default_value, pos_feat)
         neg_feat = np.where(neg_feat == None, self.feature_default_value, neg_feat)
 
-        return seq, pos, neg, token_type, next_token_type, next_action_type, seq_feat, pos_feat, neg_feat
+        return (
+            seq,
+            pos,
+            neg,
+            token_type,
+            next_token_type,
+            next_action_type,
+            seq_feat,
+            pos_feat,
+            neg_feat,
+        )
 
     def __len__(self):
         """
@@ -806,46 +674,46 @@ class MyDataset(torch.utils.data.Dataset):
         feat_default_value = {}
         feat_statistics = {}
         feat_types = {}
-        feat_types['user_sparse'] = ['103', '104', '105', '109']
-        feat_types['item_sparse'] = [
-            '100',
-            '117',
-            '111',
-            '118',
-            '101',
-            '102',
-            '119',
-            '120',
-            '114',
-            '112',
-            '121',
-            '115',
-            '122',
-            '116',
+        feat_types["user_sparse"] = ["103", "104", "105", "109"]
+        feat_types["item_sparse"] = [
+            "100",
+            "117",
+            "111",
+            "118",
+            "101",
+            "102",
+            "119",
+            "120",
+            "114",
+            "112",
+            "121",
+            "115",
+            "122",
+            "116",
         ]
-        feat_types['item_array'] = []
-        feat_types['user_array'] = ['106', '107', '108', '110']
-        feat_types['item_emb'] = self.mm_emb_ids
-        feat_types['user_continual'] = []
-        feat_types['item_continual'] = []
+        feat_types["item_array"] = []
+        feat_types["user_array"] = ["106", "107", "108", "110"]
+        feat_types["item_emb"] = self.mm_emb_ids
+        feat_types["user_continual"] = []
+        feat_types["item_continual"] = []
 
-        for feat_id in feat_types['user_sparse']:
+        for feat_id in feat_types["user_sparse"]:
             feat_default_value[feat_id] = 0
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['item_sparse']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["item_sparse"]:
             feat_default_value[feat_id] = 0
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['item_array']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["item_array"]:
             feat_default_value[feat_id] = [0]
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['user_array']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["user_array"]:
             feat_default_value[feat_id] = [0]
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['user_continual']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["user_continual"]:
             feat_default_value[feat_id] = 0
-        for feat_id in feat_types['item_continual']:
+        for feat_id in feat_types["item_continual"]:
             feat_default_value[feat_id] = 0
-        for feat_id in feat_types['item_emb']:
+        for feat_id in feat_types["item_emb"]:
             feat_default_value[feat_id] = np.zeros(
                 list(self.mm_emb_dict[feat_id].values())[0].shape[0], dtype=np.float32
             )
@@ -875,10 +743,18 @@ class MyDataset(torch.utils.data.Dataset):
         missing_fields = set(all_feat_ids) - set(feat.keys())
         for feat_id in missing_fields:
             filled_feat[feat_id] = self.feature_default_value[feat_id]
-        for feat_id in self.feature_types['item_emb']:
-            if item_id != 0 and self.indexer_i_rev[item_id] in self.mm_emb_dict[feat_id]:
-                if type(self.mm_emb_dict[feat_id][self.indexer_i_rev[item_id]]) == np.ndarray:
-                    filled_feat[feat_id] = self.mm_emb_dict[feat_id][self.indexer_i_rev[item_id]]
+        for feat_id in self.feature_types["item_emb"]:
+            if (
+                item_id != 0
+                and self.indexer_i_rev[item_id] in self.mm_emb_dict[feat_id]
+            ):
+                if (
+                    type(self.mm_emb_dict[feat_id][self.indexer_i_rev[item_id]])
+                    == np.ndarray
+                ):
+                    filled_feat[feat_id] = self.mm_emb_dict[feat_id][
+                        self.indexer_i_rev[item_id]
+                    ]
 
         return filled_feat
 
@@ -898,7 +774,17 @@ class MyDataset(torch.utils.data.Dataset):
             pos_feat: 正样本特征, list形式
             neg_feat: 负样本特征, list形式
         """
-        seq, pos, neg, token_type, next_token_type, next_action_type, seq_feat, pos_feat, neg_feat = zip(*batch)
+        (
+            seq,
+            pos,
+            neg,
+            token_type,
+            next_token_type,
+            next_action_type,
+            seq_feat,
+            pos_feat,
+            neg_feat,
+        ) = zip(*batch)
         seq = torch.from_numpy(np.array(seq))
         pos = torch.from_numpy(np.array(pos))
         neg = torch.from_numpy(np.array(neg))
@@ -908,7 +794,17 @@ class MyDataset(torch.utils.data.Dataset):
         seq_feat = list(seq_feat)
         pos_feat = list(pos_feat)
         neg_feat = list(neg_feat)
-        return seq, pos, neg, token_type, next_token_type, next_action_type, seq_feat, pos_feat, neg_feat
+        return (
+            seq,
+            pos,
+            neg,
+            token_type,
+            next_token_type,
+            next_action_type,
+            seq_feat,
+            pos_feat,
+            neg_feat,
+        )
 
 
 class MyTestDataset(MyDataset):
@@ -920,9 +816,9 @@ class MyTestDataset(MyDataset):
         super().__init__(data_dir, args)
 
     def _load_data_and_offsets(self):
-        if self.dataset_type == 'tencent':
-            self.data_file = open(self.data_dir / "predict_seq.jsonl", 'rb')
-            with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        if self.dataset_type == "tencent":
+            self.data_file = open(self.data_dir / "predict_seq.jsonl", "rb")
+            with open(Path(self.data_dir, "predict_seq_offsets.pkl"), "rb") as f:
                 self.seq_offsets = pickle.load(f)
         else:
             # Reuse KuaiRec loader for inference scenarios
@@ -1015,8 +911,8 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        if self.dataset_type == 'tencent':
-            with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        if self.dataset_type == "tencent":
+            with open(Path(self.data_dir, "predict_seq_offsets.pkl"), "rb") as f:
                 temp = pickle.load(f)
             return len(temp)
         return len(self.seq_offsets)
@@ -1053,9 +949,9 @@ def save_emb(emb, save_path):
     """
     num_points = emb.shape[0]  # 数据点数量
     num_dimensions = emb.shape[1]  # 向量的维度
-    print(f'saving {save_path}')
-    with open(Path(save_path), 'wb') as f:
-        f.write(struct.pack('II', num_points, num_dimensions))
+    print(f"saving {save_path}")
+    with open(Path(save_path), "wb") as f:
+        f.write(struct.pack("II", num_points, num_dimensions))
         emb.tofile(f)
 
 
@@ -1070,114 +966,48 @@ def load_mm_emb(mm_path, feat_ids):
     Returns:
         mm_emb_dict: 多模态特征Embedding字典，key为特征ID，value为特征Embedding字典（key为item ID，value为Embedding）
     """
-    #SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
+    # SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
     SHAPE_DICT = {"82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
 
     mm_emb_dict = {}
-    for feat_id in tqdm(feat_ids, desc='Loading mm_emb'):
+    for feat_id in tqdm(feat_ids, desc="Loading mm_emb"):
         shape = SHAPE_DICT[feat_id]
         emb_dict = {}
-        if feat_id != '81':
+        if feat_id != "81":
             try:
-                base_path = Path(mm_path, f'emb_{feat_id}_{shape}')
-                for json_file in base_path.glob('part-*'):
-                    with open(json_file, 'r', encoding='utf-8') as file:
+                base_path = Path(mm_path, f"emb_{feat_id}_{shape}")
+                for json_file in base_path.glob("part-*"):
+                    with open(json_file, "r", encoding="utf-8") as file:
                         for line in file:
                             data_dict_origin = json.loads(line.strip())
-                            insert_emb = data_dict_origin['emb']
+                            insert_emb = data_dict_origin["emb"]
                             if isinstance(insert_emb, list):
                                 insert_emb = np.array(insert_emb, dtype=np.float32)
-                            data_dict = {data_dict_origin['anonymous_cid']: insert_emb}
+                            data_dict = {data_dict_origin["anonymous_cid"]: insert_emb}
                             emb_dict.update(data_dict)
             except Exception as e:
                 print(f"transfer error: {e}")
-                
-        '''
+
+        """
         if feat_id == '81':
             with open(Path(mm_path, f'emb_{feat_id}_{shape}.pkl'), 'rb') as f:
                 emb_dict = pickle.load(f)
-        '''
+        """
         mm_emb_dict[feat_id] = emb_dict
-        print(f'Loaded #{feat_id} mm_emb')
+        print(f"Loaded #{feat_id} mm_emb")
     return mm_emb_dict
 
 
-def resolve_data_root(data_path=None, ignore_env=False):
-    """Determine the dataset root used for loading.
-
-    The lookup mirrors the dataset CLI helper so training scripts benefit from the
-    same automatic discovery of KuaiRec/Tencent assets. Preference order:
-
-    1. An explicit ``data_path`` argument.
-    2. ``TRAIN_DATA_PATH`` from the environment (unless ``ignore_env``).
-    3. Common ``data/`` or ``dataset/`` folders relative to the repository and
-       ``train/`` directory.
-    """
-
+def _resolve_data_root(cli_args):
     script_dir = Path(__file__).resolve().parent
+    if cli_args.data_path is not None:
+        return Path(cli_args.data_path)
 
-    def _iter_variants(base: Path):
-        variants = [
-            base,
-            base / "data",
-            base / "KuaiRec",
-            base / "KuaiRec" / "data",
-            base / "dataset",
-            base / "dataset" / "KuaiRec",
-            base / "dataset" / "KuaiRec" / "data",
-        ]
-        # When the caller points at ``train/data`` we also want to look one level
-        # up (repository root) for sibling dataset folders.
-        if base.parent not in {base, Path(".")}:  # handles relative ``data`` -> ``.``
-            variants.extend(
-                [
-                    base.parent / "KuaiRec",
-                    base.parent / "KuaiRec" / "data",
-                    base.parent / "dataset",
-                    base.parent / "dataset" / "KuaiRec",
-                    base.parent / "dataset" / "KuaiRec" / "data",
-                ]
-            )
+    from os import environ
 
-        seen = set()
-        for variant in variants:
-            variant = variant.resolve() if variant.exists() else variant
-            if variant in seen:
-                continue
-            seen.add(variant)
-            yield Path(variant)
-
-    def _contains_dataset(path: Path) -> bool:
-        checks = [
-            path / "seq.jsonl",
-            path / "predict_seq.jsonl",
-            path / "small_matrix.csv",
-            path / "big_matrix.csv",
-        ]
-        if any(check.exists() for check in checks):
-            return True
-        data_subdir = path / "data"
-        if data_subdir.exists():
-            return _contains_dataset(data_subdir)
-        return False
-
-    def _resolve_from_base(base: Path):
-        for candidate in _iter_variants(base):
-            if candidate.exists() and _contains_dataset(candidate):
-                return candidate
-        return None
-
-    if data_path is not None:
-        explicit = Path(data_path)
-        resolved = _resolve_from_base(explicit)
-        return resolved if resolved is not None else explicit
-
-    if not ignore_env:
-        env_path = os.environ.get("TRAIN_DATA_PATH")
-        if env_path:
-            env_root = Path(env_path)
-            resolved = _resolve_from_base(env_root)
-            return resolved if resolved is not None else env_root
+    env_path = None if cli_args.no_env else environ.get("TRAIN_DATA_PATH")
+    if env_path:
+        return Path(env_path)
 
     candidate_roots = [
         Path("./data"),
@@ -1187,17 +1017,11 @@ def resolve_data_root(data_path=None, ignore_env=False):
         script_dir / "dataset",
         script_dir.parent / "dataset",
     ]
-
     for candidate in candidate_roots:
-        resolved = _resolve_from_base(candidate)
-        if resolved is not None:
-            return resolved
-
-    for candidate in candidate_roots:
-        for variant in _iter_variants(candidate):
-            if variant.exists():
-                return variant
-
+        if candidate.exists():
+            return candidate
+        if (candidate / "KuaiRec").exists():
+            return candidate / "KuaiRec"
     return candidate_roots[0]
 
 
@@ -1213,27 +1037,25 @@ def main():
     except AttributeError:
         pass
 
-    parser = argparse.ArgumentParser(description="Inspect dataset loading and derived features.")
+    parser = argparse.ArgumentParser(
+        description="Inspect dataset loading and derived features."
+    )
     parser.add_argument(
         "--data-path",
         default=None,
         help="Root directory that contains the Tencent preprocessed files or KuaiRec CSVs.",
     )
-    parser.add_argument("--maxlen", type=int, default=100, help="Maximum sequence length to keep per user.")
+    parser.add_argument(
+        "--maxlen",
+        type=int,
+        default=100,
+        help="Maximum sequence length to keep per user.",
+    )
     parser.add_argument(
         "--mm-emb-id",
         nargs="*",
         default=[],
         help="Tencent only: multimedia embedding feature IDs to load (e.g. 82 83).",
-    )
-    parser.add_argument(
-        "--watch-ratio-threshold",
-        type=float,
-        default=None,
-        help=(
-            "KuaiRec only: minimum watch_ratio required to keep an interaction. "
-            "Set to 2.0 to follow the official like-signal suggestion."
-        ),
     )
     parser.add_argument(
         "--sample-users",
@@ -1253,23 +1075,19 @@ def main():
     )
 
     cli_args = parser.parse_args()
-    data_root = Path(
-        resolve_data_root(data_path=cli_args.data_path, ignore_env=cli_args.no_env)
-    )
+    data_root = Path(_resolve_data_root(cli_args))
     resolved_path = data_root.resolve() if data_root.exists() else data_root
     print(f"Inspecting data root: {resolved_path}", flush=True)
 
-    runtime_args = SimpleNamespace(
-        maxlen=cli_args.maxlen,
-        mm_emb_id=cli_args.mm_emb_id,
-        watch_ratio_threshold=cli_args.watch_ratio_threshold,
-    )
+    runtime_args = SimpleNamespace(maxlen=cli_args.maxlen, mm_emb_id=cli_args.mm_emb_id)
 
     try:
         dataset = MyDataset(str(data_root), runtime_args)
     except FileNotFoundError as err:
         print(f"\n❌ {err}")
-        print("Provide the KuaiRec/Tencent files via --data-path or set TRAIN_DATA_PATH before running this helper.")
+        print(
+            "Provide the KuaiRec/Tencent files via --data-path or set TRAIN_DATA_PATH before running this helper."
+        )
         return 1
     except Exception:
         print("\n❌ Unexpected error while loading the dataset:")
@@ -1282,28 +1100,6 @@ def main():
     user_count = getattr(dataset, "usernum", len(dataset))
     item_count = getattr(dataset, "itemnum", "unknown")
     print(f"Users: {user_count}  Items: {item_count}  User sequences: {len(dataset)}")
-
-    if dataset.dataset_type == 'kuairec':
-        print("\nKuaiRec interaction summary:")
-        raw_rows = getattr(dataset, 'kuairec_rows_raw', None)
-        dropna_rows = getattr(dataset, 'kuairec_rows_after_dropna', None)
-        kept_rows = getattr(dataset, 'kuairec_rows_after_filter', None)
-        filtered_rows = getattr(dataset, 'kuairec_rows_filtered_by_threshold', None)
-        if raw_rows is not None:
-            print(f"  - Raw CSV rows: {raw_rows}")
-        if dropna_rows is not None and raw_rows is not None:
-            dropped_missing = raw_rows - dropna_rows
-            if dropped_missing:
-                print(f"  - Dropped {dropped_missing} rows with missing user/item IDs")
-        if filtered_rows is not None and filtered_rows > 0:
-            threshold = getattr(dataset, 'kuairec_watch_ratio_threshold', None)
-            suffix = f" (watch_ratio_threshold={threshold})" if threshold is not None else ''
-            print(f"  - Removed {filtered_rows} low-engagement rows{suffix}")
-        if kept_rows is not None:
-            print(f"  - Rows kept for sequential training: {kept_rows}")
-        seq_events = getattr(dataset, 'kuairec_sequence_event_count', None)
-        if seq_events is not None:
-            print(f"  - Total chronological interactions across sequences: {seq_events}")
 
     if cli_args.show_features and getattr(dataset, "feature_types", None):
         print("\nDerived feature groups:")
@@ -1336,21 +1132,19 @@ def main():
         history_len = int(np.count_nonzero(seq))
         positives = pos[pos > 0]
         next_item_id = int(positives[-1]) if positives.size else 0
-        original_item = dataset.indexer_i_rev.get(next_item_id, "n/a") if next_item_id else "n/a"
+        original_item = (
+            dataset.indexer_i_rev.get(next_item_id, "n/a") if next_item_id else "n/a"
+        )
         print(
             f"  • User #{idx}: history length={history_len}, next positive item id={next_item_id} (original={original_item})"
         )
 
-    launch_hint = f'python train/main.py --data_path "{resolved_path}"'
-    if cli_args.watch_ratio_threshold is not None:
-        launch_hint += f' --watch_ratio_threshold {cli_args.watch_ratio_threshold}'
     print(
-        "\nUse {cmd} to launch full training once the dataset looks correct. "
-        "You can also export TRAIN_DATA_PATH instead of passing --data_path."
-        .format(cmd=launch_hint)
+        "\nUse python train/main.py to launch full training once the dataset looks correct."
     )
     return 0
 
 
 if __name__ == "__main__":
+    load_kuairect = MyDataset._load_kuairec_dataset
     raise SystemExit(main())
