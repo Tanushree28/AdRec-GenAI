@@ -69,87 +69,25 @@ class MyDataset(torch.utils.data.Dataset):
             return 'tencent'
         if (self.data_dir / "predict_seq.jsonl").exists():
             return 'tencent'
-
-        kuai_root = self._locate_kuairec_root()
-        if kuai_root is not None:
-            self.kuairec_root = kuai_root
-            origin = 'Google Drive' if str(kuai_root).startswith('/content/drive') else 'local storage'
-            print(
-                f"Detected KuaiRec dataset under {kuai_root.resolve() if kuai_root.exists() else kuai_root} "
-                f"({origin}).",
-                flush=True,
-            )
-            return 'kuairec'
+        candidate_dirs = [self.data_dir]
+        if (self.data_dir / 'data').exists():
+            candidate_dirs.append(self.data_dir / 'data')
+        for candidate in candidate_dirs:
+            if (candidate / 'small_matrix.csv').exists() or (candidate / 'big_matrix.csv').exists():
+                self.kuairec_root = candidate
+                return 'kuairec'
         raise FileNotFoundError(
             f"Unable to detect dataset format under {self.data_dir}. Expected Tencent preprocessed files or KuaiRec CSVs."
         )
-
-    def _locate_kuairec_root(self):
-        candidates = [self.data_dir]
-        data_subdir = self.data_dir / 'data'
-        if data_subdir.exists():
-            candidates.append(data_subdir)
-
-        # Common pattern: repo_root/dataset/KuaiRec[/data]
-        dataset_root = self.data_dir / 'dataset'
-        if dataset_root.exists():
-            candidates.append(dataset_root)
-        kuai_from_dataset = dataset_root / 'KuaiRec'
-        if kuai_from_dataset.exists():
-            candidates.append(kuai_from_dataset)
-            kuai_data = kuai_from_dataset / 'data'
-            if kuai_data.exists():
-                candidates.append(kuai_data)
-
-        # Allow walking up one level to discover ./data/KuaiRec style layouts when invoked
-        # from repo_root/train/.
-        parent_data = self.data_dir.parent / 'data'
-        if parent_data.exists():
-            candidates.append(parent_data)
-            parent_kuai = parent_data / 'KuaiRec'
-            if parent_kuai.exists():
-                candidates.append(parent_kuai)
-                parent_kuai_data = parent_kuai / 'data'
-                if parent_kuai_data.exists():
-                    candidates.append(parent_kuai_data)
-
-        # Common Google Drive mount points for notebooks / VS Code remote sessions
-        drive_root = Path("/content/drive/MyDrive/datasets/KuaiRec")
-        if drive_root.exists():
-            candidates.append(drive_root)
-            drive_data = drive_root / 'data'
-            if drive_data.exists():
-                candidates.append(drive_data)
-
-        # Expand each candidate with embedded KuaiRec subdirectories to cover
-        # structures such as data/KuaiRec/data/...
-        expanded_candidates = []
-        for candidate in candidates:
-            expanded_candidates.append(candidate)
-            expanded_candidates.append(candidate / 'KuaiRec')
-            expanded_candidates.append(candidate / 'KuaiRec' / 'data')
-
-        for candidate in expanded_candidates:
-            if (candidate / 'small_matrix.csv').exists() or (candidate / 'big_matrix.csv').exists():
-                return candidate
-        return None
 
     def _load_data_and_offsets(self):
         """
         加载用户序列数据和每一行的文件偏移量(预处理好的), 用于快速随机访问数据并I/O
         """
         if self.dataset_type == 'tencent':
-            print(
-                f"Loading Tencent interaction sequences from {self.data_dir / 'seq.jsonl'}...",
-                flush=True,
-            )
             self.data_file = open(self.data_dir / "seq.jsonl", 'rb')
             with open(Path(self.data_dir, 'seq_offsets.pkl'), 'rb') as f:
                 self.seq_offsets = pickle.load(f)
-            print(
-                f"Loaded {len(self.seq_offsets)} Tencent user offsets.",
-                flush=True,
-            )
         else:
             self._load_kuairec_dataset()
 
@@ -172,11 +110,17 @@ class MyDataset(torch.utils.data.Dataset):
         return self.user_sequences[user_reid]
 
     def _load_kuairec_dataset(self):
-        csv_root = getattr(self, 'kuairec_root', self.data_dir)
-        tables = self._load_raw_kuairec_tables(csv_root)
+        data_root = getattr(self, 'kuairec_root', self.data_dir)
+        if not data_root.exists():
+            data_root = self.data_dir
 
-        interactions = tables['interactions']
-        data_root = tables['resolved_root']
+        interaction_path = data_root / 'small_matrix.csv'
+        if not interaction_path.exists():
+            interaction_path = data_root / 'big_matrix.csv'
+        if not interaction_path.exists():
+            raise FileNotFoundError(f"KuaiRec dataset not found under {data_root}.")
+
+        interactions = pd.read_csv(interaction_path)
 
         user_col = self._find_column(interactions.columns, ['user_id', 'userid', 'uid'])
         item_col = self._find_column(interactions.columns, ['item_id', 'video_id', 'iid', 'cid'])
@@ -198,8 +142,9 @@ class MyDataset(torch.utils.data.Dataset):
         user2reid = {user_id: idx + 1 for idx, user_id in enumerate(user_ids)}
         item2reid = {item_id: idx + 1 for idx, item_id in enumerate(item_ids)}
 
-        user_feat_df = tables.get('user_features')
-        if user_feat_df is not None:
+        user_feat_path = data_root / 'user_features.csv'
+        if user_feat_path.exists():
+            user_feat_df = pd.read_csv(user_feat_path)
             user_feat_col = self._find_column(user_feat_df.columns, ['user_id', 'userid', 'uid'])
             if user_feat_col is not None:
                 user_feat_df[user_feat_col] = user_feat_df[user_feat_col].astype(str)
@@ -209,8 +154,9 @@ class MyDataset(torch.utils.data.Dataset):
         else:
             user_feat_df = pd.DataFrame()
 
-        item_cat_df = tables.get('item_categories')
-        if item_cat_df is not None:
+        item_cat_path = data_root / 'item_categories.csv'
+        if item_cat_path.exists():
+            item_cat_df = pd.read_csv(item_cat_path)
             item_feat_col = self._find_column(item_cat_df.columns, ['item_id', 'video_id', 'iid', 'cid'])
             if item_feat_col is not None:
                 item_cat_df[item_feat_col] = item_cat_df[item_feat_col].astype(str)
@@ -288,11 +234,6 @@ class MyDataset(torch.utils.data.Dataset):
                     continue
                 self.kuairec_user_column2feat[column] = feat_id
                 self._register_feature_spec(feat_id, 'user', spec)
-            print(
-                "Registered "
-                f"{len(self.kuairec_user_column2feat)} KuaiRec user feature column(s).",
-                flush=True,
-            )
 
         if not item_feature_df.empty:
             for column in item_feature_df.columns:
@@ -305,11 +246,6 @@ class MyDataset(torch.utils.data.Dataset):
                     continue
                 self.kuairec_item_column2feat[column] = feat_id
                 self._register_feature_spec(feat_id, 'item', spec)
-            print(
-                "Registered "
-                f"{len(self.kuairec_item_column2feat)} KuaiRec item feature column(s).",
-                flush=True,
-            )
 
         self.user_feature_lookup = {}
         for user_id, user_reid in user2reid.items():
@@ -366,95 +302,8 @@ class MyDataset(torch.utils.data.Dataset):
         self.seq_offsets = list(range(len(self.uid_list)))
 
         print(
-            f"Finished KuaiRec ingest: {self.usernum} users, {self.itemnum} items, "
-            f"{len(self.user_sequences)} user sequence(s).",
-            flush=True,
+            f"Loaded KuaiRec interactions from {interaction_path} with {self.usernum} users and {self.itemnum} items."
         )
-
-    def _load_raw_kuairec_tables(self, csv_root):
-        data_root = Path(csv_root)
-        if not data_root.exists():
-            raise FileNotFoundError(f"KuaiRec dataset not found under {csv_root}.")
-
-        # Prefer nested "data" directory when present to mirror the upstream release.
-        if (data_root / 'data').exists():
-            data_root = data_root / 'data'
-
-        print(f"Resolving KuaiRec CSV bundle from {data_root.resolve()}...", flush=True)
-
-        tables = {'resolved_root': data_root}
-
-        def read_csv(name, friendly):
-            path = data_root / f"{name}.csv"
-            if not path.exists():
-                return None
-            print(f"Loading {friendly}...", flush=True)
-            df = pd.read_csv(path)
-            tables[name] = df
-            return df
-
-        big_matrix = read_csv('big_matrix', 'big matrix')
-        small_matrix = read_csv('small_matrix', 'small matrix')
-        interactions = small_matrix if small_matrix is not None else big_matrix
-        if interactions is None:
-            raise FileNotFoundError(
-                f"KuaiRec interactions missing under {data_root}. Expected small_matrix.csv or big_matrix.csv."
-            )
-
-        social_network = read_csv('social_network', 'social network')
-        if social_network is not None and 'friend_list' in social_network.columns:
-            social_network['friend_list'] = social_network['friend_list'].apply(
-                lambda x: self._safe_literal_eval(x, default=[])
-            )
-
-        item_categories = read_csv('item_categories', 'item features')
-        if item_categories is not None and 'feat' in item_categories.columns:
-            item_categories['feat'] = item_categories['feat'].apply(
-                lambda x: self._safe_literal_eval(x, default=[])
-            )
-
-        read_csv('user_features', 'user features')
-        read_csv('item_daily_features', "items' daily features")
-
-        tables['interactions'] = interactions
-
-        # Emit the same summary as the reference notebook helper for transparency.
-        print("\nDataset Summary:")
-        if big_matrix is not None:
-            print(f"  • Big matrix shape: {big_matrix.shape}")
-        if small_matrix is not None:
-            print(f"  • Small matrix shape: {small_matrix.shape}")
-        if social_network is not None:
-            print(f"  • Users in social network: {len(social_network)}")
-        if item_categories is not None:
-            print(f"  • Item features: {len(item_categories)}")
-        user_features = tables.get('user_features')
-        if user_features is not None:
-            print(f"  • User features: {len(user_features)}")
-        item_daily = tables.get('item_daily_features')
-        if item_daily is not None:
-            print(f"  • Item daily features: {len(item_daily)}")
-
-        print("\n📊 Sample data preview:")
-        preview = interactions.head(3)
-        with pd.option_context('display.max_columns', None):
-            print(preview)
-
-        print("✅ All KuaiRec CSVs loaded successfully!", flush=True)
-
-        return tables
-
-    @staticmethod
-    def _safe_literal_eval(value, default=None):
-        if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped:
-                return default
-            try:
-                return ast.literal_eval(stripped)
-            except (ValueError, SyntaxError):
-                return default
-        return value if value is not None else default
 
     @staticmethod
     def _find_column(columns, candidates):
