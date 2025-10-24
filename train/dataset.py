@@ -44,39 +44,47 @@ class MyDataset(torch.utils.data.Dataset):
         self.maxlen = args.maxlen
         self.dataset_type = self._detect_dataset_type()
 
-        if self.dataset_type == 'kuairec':
-            if getattr(args, 'mm_emb_id', None):
-                print('KuaiRec dataset detected: ignoring provided mm_emb_id settings.')
+        if self.dataset_type == "kuairec":
+            if getattr(args, "mm_emb_id", None):
+                print("KuaiRec dataset detected: ignoring provided mm_emb_id settings.")
             self.mm_emb_ids = []
         else:
             self.mm_emb_ids = args.mm_emb_id
 
         self._load_data_and_offsets()
 
-        if self.dataset_type == 'tencent':
-            self.item_feat_dict = json.load(open(Path(data_dir, "item_feat_dict.json"), 'r'))
-            self.mm_emb_dict = load_mm_emb(Path(data_dir, "creative_emb"), self.mm_emb_ids)
-            with open(self.data_dir / 'indexer.pkl', 'rb') as ff:
+        if self.dataset_type == "tencent":
+            self.item_feat_dict = json.load(
+                open(Path(data_dir, "item_feat_dict.json"), "r")
+            )
+            self.mm_emb_dict = load_mm_emb(
+                Path(data_dir, "creative_emb"), self.mm_emb_ids
+            )
+            with open(self.data_dir / "indexer.pkl", "rb") as ff:
                 indexer = pickle.load(ff)
-                self.itemnum = len(indexer['i'])
-                self.usernum = len(indexer['u'])
-            self.indexer_i_rev = {v: k for k, v in indexer['i'].items()}
-            self.indexer_u_rev = {v: k for k, v in indexer['u'].items()}
+                self.itemnum = len(indexer["i"])
+                self.usernum = len(indexer["u"])
+            self.indexer_i_rev = {v: k for k, v in indexer["i"].items()}
+            self.indexer_u_rev = {v: k for k, v in indexer["u"].items()}
             self.indexer = indexer
-            self.feature_default_value, self.feature_types, self.feat_statistics = self._init_feat_info()
+            self.feature_default_value, self.feature_types, self.feat_statistics = (
+                self._init_feat_info()
+            )
 
     def _detect_dataset_type(self):
         if (self.data_dir / "seq.jsonl").exists():
-            return 'tencent'
+            return "tencent"
         if (self.data_dir / "predict_seq.jsonl").exists():
-            return 'tencent'
+            return "tencent"
         candidate_dirs = [self.data_dir]
-        if (self.data_dir / 'data').exists():
-            candidate_dirs.append(self.data_dir / 'data')
+        if (self.data_dir / "data").exists():
+            candidate_dirs.append(self.data_dir / "data")
         for candidate in candidate_dirs:
-            if (candidate / 'small_matrix.csv').exists() or (candidate / 'big_matrix.csv').exists():
+            if (candidate / "small_matrix.csv").exists() or (
+                candidate / "big_matrix.csv"
+            ).exists():
                 self.kuairec_root = candidate
-                return 'kuairec'
+                return "kuairec"
         raise FileNotFoundError(
             f"Unable to detect dataset format under {self.data_dir}. Expected Tencent preprocessed files or KuaiRec CSVs."
         )
@@ -85,9 +93,9 @@ class MyDataset(torch.utils.data.Dataset):
         """
         加载用户序列数据和每一行的文件偏移量(预处理好的), 用于快速随机访问数据并I/O
         """
-        if self.dataset_type == 'tencent':
-            self.data_file = open(self.data_dir / "seq.jsonl", 'rb')
-            with open(Path(self.data_dir, 'seq_offsets.pkl'), 'rb') as f:
+        if self.dataset_type == "tencent":
+            self.data_file = open(self.data_dir / "seq.jsonl", "rb")
+            with open(Path(self.data_dir, "seq_offsets.pkl"), "rb") as f:
                 self.seq_offsets = pickle.load(f)
         else:
             self._load_kuairec_dataset()
@@ -102,7 +110,7 @@ class MyDataset(torch.utils.data.Dataset):
         Returns:
             data: 用户序列数据，格式为[(user_id, item_id, user_feat, item_feat, action_type, timestamp)]
         """
-        if self.dataset_type == 'tencent':
+        if self.dataset_type == "tencent":
             self.data_file.seek(self.seq_offsets[uid])
             line = self.data_file.readline()
             data = json.loads(line)
@@ -111,27 +119,42 @@ class MyDataset(torch.utils.data.Dataset):
         return self.user_sequences[user_reid]
 
     def _load_kuairec_dataset(self):
-        data_root = getattr(self, 'kuairec_root', self.data_dir)
+        data_root = getattr(self, "kuairec_root", self.data_dir)
         if not data_root.exists():
             data_root = self.data_dir
 
-        interaction_path = data_root / 'small_matrix.csv'
+        interaction_path = data_root / "small_matrix.csv"
         if not interaction_path.exists():
-            interaction_path = data_root / 'big_matrix.csv'
+            interaction_path = data_root / "big_matrix.csv"
         if not interaction_path.exists():
             raise FileNotFoundError(f"KuaiRec dataset not found under {data_root}.")
 
         interactions = pd.read_csv(interaction_path)
 
-        user_col = self._find_column(interactions.columns, ['user_id', 'userid', 'uid'])
-        item_col = self._find_column(interactions.columns, ['item_id', 'video_id', 'iid', 'cid'])
+        user_col = self._find_column(interactions.columns, ["user_id", "userid", "uid"])
+        item_col = self._find_column(
+            interactions.columns, ["item_id", "video_id", "iid", "cid"]
+        )
         if user_col is None or item_col is None:
-            raise ValueError('KuaiRec interactions must contain user and item identifier columns.')
+            raise ValueError(
+                "KuaiRec interactions must contain user and item identifier columns."
+            )
 
-        time_col = self._find_column(interactions.columns, ['timestamp', 'time', 'datetime'])
+        time_col = self._find_column(
+            interactions.columns, ["timestamp", "time", "datetime"]
+        )
         action_col = self._find_column(
             interactions.columns,
-            ['is_click', 'click', 'finish', 'like', 'view', 'watch', 'play', 'interaction'],
+            [
+                "is_click",
+                "click",
+                "finish",
+                "like",
+                "view",
+                "watch",
+                "play",
+                "interaction",
+            ],
         )
 
         interactions = interactions.dropna(subset=[user_col, item_col])
@@ -143,27 +166,35 @@ class MyDataset(torch.utils.data.Dataset):
         user2reid = {user_id: idx + 1 for idx, user_id in enumerate(user_ids)}
         item2reid = {item_id: idx + 1 for idx, item_id in enumerate(item_ids)}
 
-        user_feat_path = data_root / 'user_features.csv'
+        user_feat_path = data_root / "user_features.csv"
         if user_feat_path.exists():
             user_feat_df = pd.read_csv(user_feat_path)
-            user_feat_col = self._find_column(user_feat_df.columns, ['user_id', 'userid', 'uid'])
+            user_feat_col = self._find_column(
+                user_feat_df.columns, ["user_id", "userid", "uid"]
+            )
             if user_feat_col is not None:
                 user_feat_df[user_feat_col] = user_feat_df[user_feat_col].astype(str)
-                user_feat_df = user_feat_df.drop_duplicates(subset=[user_feat_col]).set_index(user_feat_col)
+                user_feat_df = user_feat_df.drop_duplicates(
+                    subset=[user_feat_col]
+                ).set_index(user_feat_col)
             else:
                 user_feat_df = pd.DataFrame()
         else:
             user_feat_df = pd.DataFrame()
 
-        item_cat_path = data_root / 'item_categories.csv'
+        item_cat_path = data_root / "item_categories.csv"
         if item_cat_path.exists():
             item_cat_df = pd.read_csv(item_cat_path)
-            item_feat_col = self._find_column(item_cat_df.columns, ['item_id', 'video_id', 'iid', 'cid'])
+            item_feat_col = self._find_column(
+                item_cat_df.columns, ["item_id", "video_id", "iid", "cid"]
+            )
             if item_feat_col is not None:
                 item_cat_df[item_feat_col] = item_cat_df[item_feat_col].astype(str)
                 item_cat_df = item_cat_df.drop_duplicates(subset=[item_feat_col])
-                if 'feat' in item_cat_df.columns:
-                    item_cat_df['feat'] = item_cat_df['feat'].apply(lambda x: self._parse_possible_list(x) or [])
+                if "feat" in item_cat_df.columns:
+                    item_cat_df["feat"] = item_cat_df["feat"].apply(
+                        lambda x: self._parse_possible_list(x) or []
+                    )
                 if item_feat_col != item_col:
                     item_cat_df = item_cat_df.rename(columns={item_feat_col: item_col})
             else:
@@ -178,12 +209,16 @@ class MyDataset(torch.utils.data.Dataset):
             exclude_cols.add(action_col)
         extra_cols = [col for col in interactions.columns if col not in exclude_cols]
         if extra_cols:
-            item_extra_df = interactions.groupby(item_col)[extra_cols].first().reset_index()
+            item_extra_df = (
+                interactions.groupby(item_col)[extra_cols].first().reset_index()
+            )
         else:
             item_extra_df = pd.DataFrame(columns=[item_col])
 
         if not item_cat_df.empty and not item_extra_df.empty:
-            item_feature_df = pd.merge(item_cat_df, item_extra_df, on=item_col, how='outer')
+            item_feature_df = pd.merge(
+                item_cat_df, item_extra_df, on=item_col, how="outer"
+            )
         elif not item_cat_df.empty:
             item_feature_df = item_cat_df.copy()
         else:
@@ -198,16 +233,16 @@ class MyDataset(torch.utils.data.Dataset):
         self.usernum = len(user2reid)
         self.indexer_i_rev = {v: k for k, v in item2reid.items()}
         self.indexer_u_rev = {v: k for k, v in user2reid.items()}
-        self.indexer = {'i': item2reid, 'u': user2reid, 'f': {}}
+        self.indexer = {"i": item2reid, "u": user2reid, "f": {}}
 
         self.feature_types = {
-            'user_sparse': [],
-            'item_sparse': [],
-            'user_array': [],
-            'item_array': [],
-            'user_continual': [],
-            'item_continual': [],
-            'item_emb': [],
+            "user_sparse": [],
+            "item_sparse": [],
+            "user_array": [],
+            "item_array": [],
+            "user_continual": [],
+            "item_continual": [],
+            "item_emb": [],
         }
         self.feature_default_value = {}
         self.feat_statistics = {}
@@ -217,47 +252,49 @@ class MyDataset(torch.utils.data.Dataset):
         self.kuairec_item_column2feat = {}
 
         # Ensure bias features exist so each record retains user/item entries
-        self.feature_types['user_continual'].append('u_bias')
-        self.feature_default_value['u_bias'] = 0.0
-        self.indexer['f']['u_bias'] = {}
-        self.feature_types['item_continual'].append('i_bias')
-        self.feature_default_value['i_bias'] = 0.0
-        self.indexer['f']['i_bias'] = {}
+        self.feature_types["user_continual"].append("u_bias")
+        self.feature_default_value["u_bias"] = 0.0
+        self.indexer["f"]["u_bias"] = {}
+        self.feature_types["item_continual"].append("i_bias")
+        self.feature_default_value["i_bias"] = 0.0
+        self.indexer["f"]["i_bias"] = {}
 
         if not user_feat_df.empty:
             for column in user_feat_df.columns:
                 series = user_feat_df[column]
                 if series.dropna().empty:
                     continue
-                feat_id = f'u_{column}'
-                spec = self._analyze_feature_series(series, 'user', column)
+                feat_id = f"u_{column}"
+                spec = self._analyze_feature_series(series, "user", column)
                 if spec is None:
                     continue
                 self.kuairec_user_column2feat[column] = feat_id
-                self._register_feature_spec(feat_id, 'user', spec)
+                self._register_feature_spec(feat_id, "user", spec)
 
         if not item_feature_df.empty:
             for column in item_feature_df.columns:
                 series = item_feature_df[column]
                 if isinstance(series, pd.Series) and series.dropna().empty:
                     continue
-                feat_id = f'i_{column}'
-                spec = self._analyze_feature_series(series, 'item', column)
+                feat_id = f"i_{column}"
+                spec = self._analyze_feature_series(series, "item", column)
                 if spec is None:
                     continue
                 self.kuairec_item_column2feat[column] = feat_id
-                self._register_feature_spec(feat_id, 'item', spec)
+                self._register_feature_spec(feat_id, "item", spec)
 
         self.user_feature_lookup = {}
         for user_id, user_reid in user2reid.items():
-            feat_dict = {'u_bias': 1.0}
+            feat_dict = {"u_bias": 1.0}
             if not user_feat_df.empty and user_id in user_feat_df.index:
                 row = user_feat_df.loc[user_id]
                 if isinstance(row, pd.DataFrame):
                     row = row.iloc[0]
                 for column, feat_id in self.kuairec_user_column2feat.items():
                     value = row[column]
-                    encoded = self._encode_feature_value(value, feat_id, self.kuairec_user_feature_specs)
+                    encoded = self._encode_feature_value(
+                        value, feat_id, self.kuairec_user_feature_specs
+                    )
                     if encoded is not None:
                         feat_dict[feat_id] = encoded
             self.user_feature_lookup[user_reid] = feat_dict
@@ -265,26 +302,30 @@ class MyDataset(torch.utils.data.Dataset):
         self.item_feat_dict = {}
         if not item_feature_df.empty:
             for item_id, item_reid in item2reid.items():
-                feat_dict = {'i_bias': 1.0}
+                feat_dict = {"i_bias": 1.0}
                 if item_id in item_feature_df.index:
                     row = item_feature_df.loc[item_id]
                     if isinstance(row, pd.DataFrame):
                         row = row.iloc[0]
                     for column, feat_id in self.kuairec_item_column2feat.items():
                         value = row[column]
-                        encoded = self._encode_feature_value(value, feat_id, self.kuairec_item_feature_specs)
+                        encoded = self._encode_feature_value(
+                            value, feat_id, self.kuairec_item_feature_specs
+                        )
                         if encoded is not None:
                             feat_dict[feat_id] = encoded
                 self.item_feat_dict[str(item_reid)] = feat_dict
         else:
             for item_id, item_reid in item2reid.items():
-                self.item_feat_dict[str(item_reid)] = {'i_bias': 1.0}
+                self.item_feat_dict[str(item_reid)] = {"i_bias": 1.0}
 
         self.user_sequences = {}
-        sorted_interactions = interactions if not time_col else interactions.sort_values(time_col)
+        sorted_interactions = (
+            interactions if not time_col else interactions.sort_values(time_col)
+        )
         for user_id, group in sorted_interactions.groupby(user_col):
             user_reid = user2reid[user_id]
-            user_feat = self.user_feature_lookup.get(user_reid, {'u_bias': 1.0})
+            user_feat = self.user_feature_lookup.get(user_reid, {"u_bias": 1.0})
             seq_records = []
             ordered_group = group if time_col is None else group.sort_values(time_col)
             for order, (_, row) in enumerate(ordered_group.iterrows()):
@@ -292,10 +333,19 @@ class MyDataset(torch.utils.data.Dataset):
                 if item_id not in item2reid:
                     continue
                 item_reid = item2reid[item_id]
-                item_feat = self.item_feat_dict.get(str(item_reid), {'i_bias': 1.0})
+                item_feat = self.item_feat_dict.get(str(item_reid), {"i_bias": 1.0})
                 action_value = self._extract_action_value(row, action_col)
                 timestamp = self._extract_timestamp(row, time_col, order)
-                seq_records.append((user_reid, item_reid, dict(user_feat), dict(item_feat), action_value, timestamp))
+                seq_records.append(
+                    (
+                        user_reid,
+                        item_reid,
+                        dict(user_feat),
+                        dict(item_feat),
+                        action_value,
+                        timestamp,
+                    )
+                )
             if seq_records:
                 self.user_sequences[user_reid] = seq_records
 
@@ -320,7 +370,7 @@ class MyDataset(torch.utils.data.Dataset):
             trimmed = value.strip()
             if not trimmed:
                 return []
-            if trimmed[0] in {'[', '{', '('} and trimmed[-1] in {']', '}', ')'}:
+            if trimmed[0] in {"[", "{", "("} and trimmed[-1] in {"]", "}", ")"}:
                 try:
                     parsed = ast.literal_eval(trimmed)
                 except (ValueError, SyntaxError):
@@ -381,32 +431,32 @@ class MyDataset(torch.utils.data.Dataset):
             if not tokens:
                 return None
             mapping = {token: idx + 1 for idx, token in enumerate(sorted(tokens))}
-            return {'type': 'array', 'mapping': mapping, 'default': [0]}
+            return {"type": "array", "mapping": mapping, "default": [0]}
 
         unique_count = non_null.nunique(dropna=True)
         max_sparse_threshold = 200
         if non_null.dtype == object or unique_count <= max_sparse_threshold:
             unique_tokens = sorted(set(non_null.astype(str)))
             mapping = {token: idx + 1 for idx, token in enumerate(unique_tokens)}
-            return {'type': 'sparse', 'mapping': mapping, 'default': 0}
+            return {"type": "sparse", "mapping": mapping, "default": 0}
 
-        return {'type': 'continual', 'mapping': None, 'default': 0.0}
+        return {"type": "continual", "mapping": None, "default": 0.0}
 
     def _register_feature_spec(self, feat_id, scope, spec):
-        feature_type = spec['type']
+        feature_type = spec["type"]
         key = f"{scope}_{feature_type}"
         if key not in self.feature_types:
             self.feature_types[key] = []
         if feat_id not in self.feature_types[key]:
             self.feature_types[key].append(feat_id)
-        self.feature_default_value[feat_id] = spec['default']
-        if spec['mapping'] is not None:
-            self.indexer['f'][feat_id] = spec['mapping']
-            self.feat_statistics[feat_id] = len(spec['mapping'])
+        self.feature_default_value[feat_id] = spec["default"]
+        if spec["mapping"] is not None:
+            self.indexer["f"][feat_id] = spec["mapping"]
+            self.feat_statistics[feat_id] = len(spec["mapping"])
         else:
-            self.indexer['f'][feat_id] = {}
+            self.indexer["f"][feat_id] = {}
 
-        if scope == 'user':
+        if scope == "user":
             self.kuairec_user_feature_specs[feat_id] = spec
         else:
             self.kuairec_item_feature_specs[feat_id] = spec
@@ -418,18 +468,18 @@ class MyDataset(torch.utils.data.Dataset):
         if value is None or (isinstance(value, float) and np.isnan(value)):
             return None
 
-        feature_type = spec['type']
-        if feature_type == 'continual':
+        feature_type = spec["type"]
+        if feature_type == "continual":
             try:
                 return float(value)
             except (TypeError, ValueError):
                 return None
 
-        if feature_type == 'sparse':
+        if feature_type == "sparse":
             key = str(value)
-            return spec['mapping'].get(key, 0)
+            return spec["mapping"].get(key, 0)
 
-        if feature_type == 'array':
+        if feature_type == "array":
             parsed = self._parse_possible_list(value)
             if parsed is None:
                 if isinstance(value, dict):
@@ -438,7 +488,11 @@ class MyDataset(torch.utils.data.Dataset):
                     parsed = list(value)
                 else:
                     parsed = [value]
-            encoded = [spec['mapping'].get(str(token), 0) for token in parsed if token is not None]
+            encoded = [
+                spec["mapping"].get(str(token), 0)
+                for token in parsed
+                if token is not None
+            ]
             return encoded if encoded else [0]
 
         return None
@@ -455,9 +509,9 @@ class MyDataset(torch.utils.data.Dataset):
             stripped = value.strip().lower()
             if not stripped:
                 return 0
-            if stripped in {'true', 'yes', 'y'}:
+            if stripped in {"true", "yes", "y"}:
                 return 1
-            if stripped in {'false', 'no', 'n'}:
+            if stripped in {"false", "no", "n"}:
                 return 0
             try:
                 value = float(stripped)
@@ -485,7 +539,7 @@ class MyDataset(torch.utils.data.Dataset):
             if not stripped:
                 return fallback
             try:
-                parsed = pd.to_datetime(stripped, errors='coerce')
+                parsed = pd.to_datetime(stripped, errors="coerce")
             except Exception:
                 parsed = None
             if parsed is not None and not pd.isna(parsed):
@@ -576,7 +630,9 @@ class MyDataset(torch.utils.data.Dataset):
                 pos_feat[idx] = next_feat
                 neg_id = self._random_neq(1, self.itemnum + 1, ts)
                 neg[idx] = neg_id
-                neg_feat[idx] = self.fill_missing_feat(self.item_feat_dict[str(neg_id)], neg_id)
+                neg_feat[idx] = self.fill_missing_feat(
+                    self.item_feat_dict[str(neg_id)], neg_id
+                )
             nxt = record_tuple
             idx -= 1
             if idx == -1:
@@ -586,7 +642,17 @@ class MyDataset(torch.utils.data.Dataset):
         pos_feat = np.where(pos_feat == None, self.feature_default_value, pos_feat)
         neg_feat = np.where(neg_feat == None, self.feature_default_value, neg_feat)
 
-        return seq, pos, neg, token_type, next_token_type, next_action_type, seq_feat, pos_feat, neg_feat
+        return (
+            seq,
+            pos,
+            neg,
+            token_type,
+            next_token_type,
+            next_action_type,
+            seq_feat,
+            pos_feat,
+            neg_feat,
+        )
 
     def __len__(self):
         """
@@ -608,46 +674,46 @@ class MyDataset(torch.utils.data.Dataset):
         feat_default_value = {}
         feat_statistics = {}
         feat_types = {}
-        feat_types['user_sparse'] = ['103', '104', '105', '109']
-        feat_types['item_sparse'] = [
-            '100',
-            '117',
-            '111',
-            '118',
-            '101',
-            '102',
-            '119',
-            '120',
-            '114',
-            '112',
-            '121',
-            '115',
-            '122',
-            '116',
+        feat_types["user_sparse"] = ["103", "104", "105", "109"]
+        feat_types["item_sparse"] = [
+            "100",
+            "117",
+            "111",
+            "118",
+            "101",
+            "102",
+            "119",
+            "120",
+            "114",
+            "112",
+            "121",
+            "115",
+            "122",
+            "116",
         ]
-        feat_types['item_array'] = []
-        feat_types['user_array'] = ['106', '107', '108', '110']
-        feat_types['item_emb'] = self.mm_emb_ids
-        feat_types['user_continual'] = []
-        feat_types['item_continual'] = []
+        feat_types["item_array"] = []
+        feat_types["user_array"] = ["106", "107", "108", "110"]
+        feat_types["item_emb"] = self.mm_emb_ids
+        feat_types["user_continual"] = []
+        feat_types["item_continual"] = []
 
-        for feat_id in feat_types['user_sparse']:
+        for feat_id in feat_types["user_sparse"]:
             feat_default_value[feat_id] = 0
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['item_sparse']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["item_sparse"]:
             feat_default_value[feat_id] = 0
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['item_array']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["item_array"]:
             feat_default_value[feat_id] = [0]
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['user_array']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["user_array"]:
             feat_default_value[feat_id] = [0]
-            feat_statistics[feat_id] = len(self.indexer['f'][feat_id])
-        for feat_id in feat_types['user_continual']:
+            feat_statistics[feat_id] = len(self.indexer["f"][feat_id])
+        for feat_id in feat_types["user_continual"]:
             feat_default_value[feat_id] = 0
-        for feat_id in feat_types['item_continual']:
+        for feat_id in feat_types["item_continual"]:
             feat_default_value[feat_id] = 0
-        for feat_id in feat_types['item_emb']:
+        for feat_id in feat_types["item_emb"]:
             feat_default_value[feat_id] = np.zeros(
                 list(self.mm_emb_dict[feat_id].values())[0].shape[0], dtype=np.float32
             )
@@ -677,10 +743,18 @@ class MyDataset(torch.utils.data.Dataset):
         missing_fields = set(all_feat_ids) - set(feat.keys())
         for feat_id in missing_fields:
             filled_feat[feat_id] = self.feature_default_value[feat_id]
-        for feat_id in self.feature_types['item_emb']:
-            if item_id != 0 and self.indexer_i_rev[item_id] in self.mm_emb_dict[feat_id]:
-                if type(self.mm_emb_dict[feat_id][self.indexer_i_rev[item_id]]) == np.ndarray:
-                    filled_feat[feat_id] = self.mm_emb_dict[feat_id][self.indexer_i_rev[item_id]]
+        for feat_id in self.feature_types["item_emb"]:
+            if (
+                item_id != 0
+                and self.indexer_i_rev[item_id] in self.mm_emb_dict[feat_id]
+            ):
+                if (
+                    type(self.mm_emb_dict[feat_id][self.indexer_i_rev[item_id]])
+                    == np.ndarray
+                ):
+                    filled_feat[feat_id] = self.mm_emb_dict[feat_id][
+                        self.indexer_i_rev[item_id]
+                    ]
 
         return filled_feat
 
@@ -700,7 +774,17 @@ class MyDataset(torch.utils.data.Dataset):
             pos_feat: 正样本特征, list形式
             neg_feat: 负样本特征, list形式
         """
-        seq, pos, neg, token_type, next_token_type, next_action_type, seq_feat, pos_feat, neg_feat = zip(*batch)
+        (
+            seq,
+            pos,
+            neg,
+            token_type,
+            next_token_type,
+            next_action_type,
+            seq_feat,
+            pos_feat,
+            neg_feat,
+        ) = zip(*batch)
         seq = torch.from_numpy(np.array(seq))
         pos = torch.from_numpy(np.array(pos))
         neg = torch.from_numpy(np.array(neg))
@@ -710,7 +794,17 @@ class MyDataset(torch.utils.data.Dataset):
         seq_feat = list(seq_feat)
         pos_feat = list(pos_feat)
         neg_feat = list(neg_feat)
-        return seq, pos, neg, token_type, next_token_type, next_action_type, seq_feat, pos_feat, neg_feat
+        return (
+            seq,
+            pos,
+            neg,
+            token_type,
+            next_token_type,
+            next_action_type,
+            seq_feat,
+            pos_feat,
+            neg_feat,
+        )
 
 
 class MyTestDataset(MyDataset):
@@ -722,9 +816,9 @@ class MyTestDataset(MyDataset):
         super().__init__(data_dir, args)
 
     def _load_data_and_offsets(self):
-        if self.dataset_type == 'tencent':
-            self.data_file = open(self.data_dir / "predict_seq.jsonl", 'rb')
-            with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        if self.dataset_type == "tencent":
+            self.data_file = open(self.data_dir / "predict_seq.jsonl", "rb")
+            with open(Path(self.data_dir, "predict_seq_offsets.pkl"), "rb") as f:
                 self.seq_offsets = pickle.load(f)
         else:
             # Reuse KuaiRec loader for inference scenarios
@@ -817,8 +911,8 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        if self.dataset_type == 'tencent':
-            with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        if self.dataset_type == "tencent":
+            with open(Path(self.data_dir, "predict_seq_offsets.pkl"), "rb") as f:
                 temp = pickle.load(f)
             return len(temp)
         return len(self.seq_offsets)
@@ -855,9 +949,9 @@ def save_emb(emb, save_path):
     """
     num_points = emb.shape[0]  # 数据点数量
     num_dimensions = emb.shape[1]  # 向量的维度
-    print(f'saving {save_path}')
-    with open(Path(save_path), 'wb') as f:
-        f.write(struct.pack('II', num_points, num_dimensions))
+    print(f"saving {save_path}")
+    with open(Path(save_path), "wb") as f:
+        f.write(struct.pack("II", num_points, num_dimensions))
         emb.tofile(f)
 
 
@@ -872,35 +966,35 @@ def load_mm_emb(mm_path, feat_ids):
     Returns:
         mm_emb_dict: 多模态特征Embedding字典，key为特征ID，value为特征Embedding字典（key为item ID，value为Embedding）
     """
-    #SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
+    # SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
     SHAPE_DICT = {"82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
 
     mm_emb_dict = {}
-    for feat_id in tqdm(feat_ids, desc='Loading mm_emb'):
+    for feat_id in tqdm(feat_ids, desc="Loading mm_emb"):
         shape = SHAPE_DICT[feat_id]
         emb_dict = {}
-        if feat_id != '81':
+        if feat_id != "81":
             try:
-                base_path = Path(mm_path, f'emb_{feat_id}_{shape}')
-                for json_file in base_path.glob('part-*'):
-                    with open(json_file, 'r', encoding='utf-8') as file:
+                base_path = Path(mm_path, f"emb_{feat_id}_{shape}")
+                for json_file in base_path.glob("part-*"):
+                    with open(json_file, "r", encoding="utf-8") as file:
                         for line in file:
                             data_dict_origin = json.loads(line.strip())
-                            insert_emb = data_dict_origin['emb']
+                            insert_emb = data_dict_origin["emb"]
                             if isinstance(insert_emb, list):
                                 insert_emb = np.array(insert_emb, dtype=np.float32)
-                            data_dict = {data_dict_origin['anonymous_cid']: insert_emb}
+                            data_dict = {data_dict_origin["anonymous_cid"]: insert_emb}
                             emb_dict.update(data_dict)
             except Exception as e:
                 print(f"transfer error: {e}")
-                
-        '''
+
+        """
         if feat_id == '81':
             with open(Path(mm_path, f'emb_{feat_id}_{shape}.pkl'), 'rb') as f:
                 emb_dict = pickle.load(f)
-        '''
+        """
         mm_emb_dict[feat_id] = emb_dict
-        print(f'Loaded #{feat_id} mm_emb')
+        print(f"Loaded #{feat_id} mm_emb")
     return mm_emb_dict
 
 
@@ -943,13 +1037,20 @@ def main():
     except AttributeError:
         pass
 
-    parser = argparse.ArgumentParser(description="Inspect dataset loading and derived features.")
+    parser = argparse.ArgumentParser(
+        description="Inspect dataset loading and derived features."
+    )
     parser.add_argument(
         "--data-path",
         default=None,
         help="Root directory that contains the Tencent preprocessed files or KuaiRec CSVs.",
     )
-    parser.add_argument("--maxlen", type=int, default=100, help="Maximum sequence length to keep per user.")
+    parser.add_argument(
+        "--maxlen",
+        type=int,
+        default=100,
+        help="Maximum sequence length to keep per user.",
+    )
     parser.add_argument(
         "--mm-emb-id",
         nargs="*",
@@ -984,7 +1085,9 @@ def main():
         dataset = MyDataset(str(data_root), runtime_args)
     except FileNotFoundError as err:
         print(f"\n❌ {err}")
-        print("Provide the KuaiRec/Tencent files via --data-path or set TRAIN_DATA_PATH before running this helper.")
+        print(
+            "Provide the KuaiRec/Tencent files via --data-path or set TRAIN_DATA_PATH before running this helper."
+        )
         return 1
     except Exception:
         print("\n❌ Unexpected error while loading the dataset:")
@@ -1029,14 +1132,19 @@ def main():
         history_len = int(np.count_nonzero(seq))
         positives = pos[pos > 0]
         next_item_id = int(positives[-1]) if positives.size else 0
-        original_item = dataset.indexer_i_rev.get(next_item_id, "n/a") if next_item_id else "n/a"
+        original_item = (
+            dataset.indexer_i_rev.get(next_item_id, "n/a") if next_item_id else "n/a"
+        )
         print(
             f"  • User #{idx}: history length={history_len}, next positive item id={next_item_id} (original={original_item})"
         )
 
-    print("\nUse python train/main.py to launch full training once the dataset looks correct.")
+    print(
+        "\nUse python train/main.py to launch full training once the dataset looks correct."
+    )
     return 0
 
 
 if __name__ == "__main__":
+    load_kuairect = MyDataset._load_kuairec_dataset
     raise SystemExit(main())
