@@ -5,6 +5,7 @@ venv/
 
 # Folder to ignore
 TencentGR_1k/
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
