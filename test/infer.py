@@ -19,13 +19,60 @@ from dataset import MyTestDataset, save_emb
 from model import BaselineModel
 
 
+def normalise_device(device_str: str) -> str:
+    """Validate the requested device string and fall back to CPU when unavailable."""
+
+    requested = (device_str or "cpu").strip()
+
+    try:
+        device = torch.device(requested)
+    except (TypeError, RuntimeError):
+        print(
+            f"[infer] WARNING: Unrecognised device '{requested}'; defaulting to CPU.",
+            file=sys.stderr,
+        )
+        return "cpu"
+
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            print(
+                f"[infer] WARNING: CUDA requested ('{requested}') but torch reports no CUDA support. Using CPU instead.",
+                file=sys.stderr,
+            )
+            return "cpu"
+    elif device.type == "mps":
+        if not hasattr(torch.backends, "mps") or not torch.backends.mps.is_available():
+            print(
+                f"[infer] WARNING: MPS requested ('{requested}') but is not available. Using CPU instead.",
+                file=sys.stderr,
+            )
+            return "cpu"
+
+    return str(device)
+
+
 def get_ckpt_path():
     ckpt_path = os.environ.get("MODEL_OUTPUT_PATH")
-    if ckpt_path is None:
+    if not ckpt_path:
         raise ValueError("MODEL_OUTPUT_PATH is not set")
-    for item in os.listdir(ckpt_path):
-        if item.endswith(".pt"):
-            return os.path.join(ckpt_path, item)
+    ckpt_path = Path(ckpt_path)
+    if not ckpt_path.exists():
+        raise FileNotFoundError(f"MODEL_OUTPUT_PATH does not exist: {ckpt_path}")
+
+    if ckpt_path.is_file():
+        if ckpt_path.suffix != ".pt":
+            raise ValueError(
+                f"MODEL_OUTPUT_PATH points to a file that is not a .pt checkpoint: {ckpt_path}"
+            )
+        return str(ckpt_path)
+
+    if not ckpt_path.is_dir():
+        raise NotADirectoryError(f"MODEL_OUTPUT_PATH must be a directory or .pt file: {ckpt_path}")
+
+    for item in sorted(ckpt_path.iterdir()):
+        if item.suffix == ".pt":
+            return str(item)
+    raise FileNotFoundError("No .pt file found in MODEL_OUTPUT_PATH")
 
 
 def get_args():
@@ -49,7 +96,7 @@ def get_args():
     parser.add_argument('--norm_first', action='store_true')
 
     # MMemb Feature ID
-    parser.add_argument('--mm_emb_id', nargs='+', default=['81'], type=str, choices=[str(s) for s in range(81, 87)])
+    parser.add_argument('--mm_emb_id', nargs='+', default=['82'], type=str, choices=[str(s) for s in range(81, 87)])
 
     args = parser.parse_args()
 
@@ -94,7 +141,16 @@ def process_cold_start_feat(feat):
     return processed_feat
 
 
-def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model):
+def get_candidate_emb(
+    indexer,
+    feat_types,
+    feat_default_value,
+    mm_emb_dict,
+    model,
+    data_root=None,
+    result_root=None,
+    item_feat_dict=None,
+):
     """
     生产候选库item的id和embedding
 
@@ -108,27 +164,72 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
         retrieve_id2creative_id: 索引id->creative_id的dict
     """
     EMB_SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
-    candidate_path = Path(os.environ.get('EVAL_DATA_PATH'), 'predict_set.jsonl')
+    data_root = Path(data_root) if data_root is not None else Path(os.environ.get('EVAL_DATA_PATH'))
+    result_root = Path(result_root) if result_root is not None else Path(os.environ.get('EVAL_RESULT_PATH'))
+    candidate_path = data_root / 'predict_set.jsonl'
+    use_predict_set = candidate_path.exists()
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
-    with open(candidate_path, 'r') as f:
-        for line in f:
-            line = json.loads(line)
-            # 读取item特征，并补充缺失值
-            feature = line['features']
-            creative_id = line['creative_id']
-            retrieval_id = line['retrieval_id']
-            item_id = indexer[creative_id] if creative_id in indexer else 0
+    if use_predict_set:
+        print(f"[infer] Loading candidate set from {candidate_path}")
+        with open(candidate_path, 'r') as f:
+            for line in f:
+                line = json.loads(line)
+                feature = line['features']
+                creative_id = line['creative_id']
+                retrieval_id = line['retrieval_id']
+                item_id = indexer.get(creative_id, 0)
+
+                feature = process_cold_start_feat(feature)
+                missing_fields = set(
+                    feat_types['item_sparse'] + feat_types['item_array'] + feat_types['item_continual']
+                ) - set(feature.keys())
+                for feat_id in missing_fields:
+                    feature[feat_id] = feat_default_value[feat_id]
+
+                for feat_id in feat_types['item_emb']:
+                    emb_lookup = mm_emb_dict.get(feat_id, {})
+                    if creative_id in emb_lookup:
+                        feature[feat_id] = emb_lookup[creative_id]
+                    else:
+                        feature[feat_id] = np.zeros(EMB_SHAPE_DICT[feat_id], dtype=np.float32)
+
+                item_ids.append(item_id)
+                creative_ids.append(creative_id)
+                retrieval_ids.append(retrieval_id)
+                features.append(feature)
+                retrieve_id2creative_id[retrieval_id] = creative_id
+    else:
+        if item_feat_dict is None:
+            item_feat_path = data_root / 'item_feat_dict.json'
+            if not item_feat_path.exists():
+                raise FileNotFoundError(
+                    "predict_set.jsonl not found under "
+                    f"{data_root} and item_feat_dict.json is unavailable for fallback"
+                )
+            with open(item_feat_path, 'r') as f:
+                item_feat_dict = json.load(f)
+        print(
+            "[infer] WARNING: predict_set.jsonl not found; generating candidate set from item_feat_dict"
+        )
+        for creative_id, raw_feature in item_feat_dict.items():
+            item_id = indexer.get(creative_id)
+            if item_id is None:
+                continue
+            retrieval_id = item_id
+            feature = process_cold_start_feat(raw_feature or {})
+
             missing_fields = set(
                 feat_types['item_sparse'] + feat_types['item_array'] + feat_types['item_continual']
             ) - set(feature.keys())
-            feature = process_cold_start_feat(feature)
             for feat_id in missing_fields:
                 feature[feat_id] = feat_default_value[feat_id]
+
             for feat_id in feat_types['item_emb']:
-                if creative_id in mm_emb_dict[feat_id]:
-                    feature[feat_id] = mm_emb_dict[feat_id][creative_id]
+                emb_lookup = mm_emb_dict.get(feat_id, {})
+                if creative_id in emb_lookup:
+                    feature[feat_id] = emb_lookup[creative_id]
                 else:
                     feature[feat_id] = np.zeros(EMB_SHAPE_DICT[feat_id], dtype=np.float32)
 
@@ -139,29 +240,88 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
             retrieve_id2creative_id[retrieval_id] = creative_id
 
     # 保存候选库的embedding和sid
-    model.save_item_emb(item_ids, retrieval_ids, features, os.environ.get('EVAL_RESULT_PATH'))
-    with open(Path(os.environ.get('EVAL_RESULT_PATH'), "retrive_id2creative_id.json"), "w") as f:
+    result_root.mkdir(parents=True, exist_ok=True)
+    print(f"[infer] Encoding {len(item_ids)} candidate items")
+    model.save_item_emb(item_ids, retrieval_ids, features, str(result_root))
+    with open(result_root / "retrive_id2creative_id.json", "w") as f:
         json.dump(retrieve_id2creative_id, f)
+    print(
+        f"[infer] Candidate artifacts saved to {result_root} (retrive_id2creative_id.json, embedding/id files)"
+    )
     return retrieve_id2creative_id
 
 
-def infer():
-    args = get_args()
+def _infer_mm_ids_from_state_dict(state_dict):
+    """Extract the multimedia embedding feature IDs present in a checkpoint."""
+
+    mm_ids = []
+    for key in state_dict.keys():
+        if key.startswith("emb_transform."):
+            parts = key.split(".")
+            if len(parts) >= 3:
+                mm_ids.append(parts[1])
+    return sorted(set(mm_ids))
+
+
+def _maybe_override_mm_ids(args, state_dict):
+    ckpt_mm_ids = _infer_mm_ids_from_state_dict(state_dict)
+    if ckpt_mm_ids and sorted(args.mm_emb_id) != ckpt_mm_ids:
+        print(
+            "[infer] WARNING: Checkpoint was trained with mm_emb_id="
+            f"{ckpt_mm_ids}, overriding requested values {args.mm_emb_id}"
+        )
+        args.mm_emb_id = ckpt_mm_ids
+
+
+def infer(args=None):
+    args = args or get_args()
+    args.device = normalise_device(getattr(args, "device", "cpu"))
+
+    ckpt_path = get_ckpt_path()
+    print(f"[infer] Loading checkpoint: {ckpt_path}")
+    state_dict = torch.load(ckpt_path, map_location="cpu")
+    _maybe_override_mm_ids(args, state_dict)
+
+    print("[infer] Parsed arguments:")
+    for key in sorted(vars(args)):
+        if key == "mm_emb_id":
+            continue
+        value = getattr(args, key)
+        print(f"    {key}: {value}")
+    print(f"    mm_emb_id: {', '.join(args.mm_emb_id) if args.mm_emb_id else 'none'}")
     data_path = os.environ.get('EVAL_DATA_PATH')
+    if not data_path:
+        raise ValueError("EVAL_DATA_PATH is not set")
+    data_path = Path(data_path)
+    if not data_path.exists():
+        raise FileNotFoundError(f"EVAL_DATA_PATH does not exist: {data_path}")
+    if not data_path.is_dir():
+        raise NotADirectoryError(f"EVAL_DATA_PATH must be a directory: {data_path}")
+    print(f"[infer] Loading evaluation data from: {data_path}")
     test_dataset = MyTestDataset(data_path, args)
+    sequence_source = getattr(test_dataset, "sequence_source", "seq.jsonl")
+    num_users = len(test_dataset)
+    print(f"[infer] Using sequence file: {sequence_source} | users detected: {num_users}")
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, collate_fn=test_dataset.collate_fn
     )
+    num_batches = len(test_loader)
     usernum, itemnum = test_dataset.usernum, test_dataset.itemnum
     feat_statistics, feat_types = test_dataset.feat_statistics, test_dataset.feature_types
     model = BaselineModel(usernum, itemnum, feat_statistics, feat_types, args).to(args.device)
     model.eval()
 
-    ckpt_path = get_ckpt_path()
-    model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
+    load_result = model.load_state_dict(state_dict, strict=False)
+    missing_keys = getattr(load_result, "missing_keys", [])
+    unexpected_keys = getattr(load_result, "unexpected_keys", [])
+    if missing_keys:
+        print(f"[infer] WARNING: Missing keys when loading checkpoint: {missing_keys}")
+    if unexpected_keys:
+        print(f"[infer] WARNING: Unexpected keys when loading checkpoint: {unexpected_keys}")
     all_embs = []
     user_list = []
-    for step, batch in tqdm(enumerate(test_loader), total=len(test_loader)):
+    print(f"[infer] Starting query embedding export across {num_batches} batches")
+    for step, batch in tqdm(enumerate(test_loader), total=num_batches, desc="Query batches"):
 
         seq, token_type, seq_feat, user_id = batch
         seq = seq.to(args.device)
@@ -172,38 +332,78 @@ def infer():
         user_list += user_id
 
     # 生成候选库的embedding 以及 id文件
+    result_root = os.environ.get('EVAL_RESULT_PATH')
+    if not result_root:
+        raise ValueError("EVAL_RESULT_PATH is not set")
+    result_root = Path(result_root)
+    result_root.mkdir(parents=True, exist_ok=True)
+    print(f"[infer] Writing inference artifacts to: {result_root}")
+
     retrieve_id2creative_id = get_candidate_emb(
         test_dataset.indexer['i'],
         test_dataset.feature_types,
         test_dataset.feature_default_value,
         test_dataset.mm_emb_dict,
         model,
+        data_root=data_path,
+        result_root=result_root,
+        item_feat_dict=getattr(test_dataset, 'item_feat_dict', None),
     )
+    if not all_embs:
+        raise ValueError("No query embeddings were generated. Check that the evaluation dataset is not empty.")
     all_embs = np.concatenate(all_embs, axis=0)
+    print(f"[infer] Query embedding matrix shape: {all_embs.shape}")
     # 保存query文件
-    save_emb(all_embs, Path(os.environ.get('EVAL_RESULT_PATH'), 'query.fbin'))
+    save_emb(all_embs, result_root / 'query.fbin')
     # ANN 检索
     ann_cmd = (
         str(Path("/workspace", "faiss-based-ann", "faiss_demo"))
         + " --dataset_vector_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "embedding.fbin"))
+        + str(result_root / "embedding.fbin")
         + " --dataset_id_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "id.u64bin"))
+        + str(result_root / "id.u64bin")
         + " --query_vector_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "query.fbin"))
+        + str(result_root / "query.fbin")
         + " --result_id_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "id100.u64bin"))
+        + str(result_root / "id100.u64bin")
         + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
     )
-    os.system(ann_cmd)
+    print(f"[infer] Running ANN retrieval command:\n{ann_cmd}")
+    exit_code = os.system(ann_cmd)
+    if exit_code != 0:
+        raise RuntimeError(
+            "FAISS demo command failed. Ensure the ANN binary is available at /workspace/faiss-based-ann/faiss_demo"
+        )
 
     # 取出top-k
-    top10s_retrieved = read_result_ids(Path(os.environ.get("EVAL_RESULT_PATH"), "id100.u64bin"))
+    print(f"[infer] Reading ANN results from {result_root / 'id100.u64bin'}")
+    top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
     top10s_untrimmed = []
-    for top10 in tqdm(top10s_retrieved):
+    for top10 in tqdm(top10s_retrieved, desc="Mapping ANN IDs"):
         for item in top10:
             top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
 
     top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
 
+    print(f"[infer] Inference complete: produced recommendations for {len(user_list)} users")
     return top10s, user_list
+
+
+def main():
+    try:
+        top10s, user_list = infer()
+    except Exception as exc:
+        print(f"[infer] ERROR: {exc}", file=sys.stderr)
+        raise
+
+    if user_list:
+        preview = top10s[0] if top10s else []
+        print(
+            f"[infer] Example user {user_list[0]} top-10 list: {preview if preview else 'no results'}"
+        )
+    else:
+        print("[infer] No users were processed.")
+
+
+if __name__ == "__main__":
+    main()
