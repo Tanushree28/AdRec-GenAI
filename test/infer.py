@@ -19,6 +19,40 @@ from dataset import MyTestDataset, save_emb
 from model import BaselineModel
 
 
+def get_required_env_path(var_name, expect_dir=False, create=False, description=None):
+    """Resolve a filesystem path from an environment variable.
+
+    Args:
+        var_name: Environment variable to read.
+        expect_dir: Whether the path should exist and be a directory.
+        create: If True and expect_dir is True, create the directory when missing.
+        description: Optional human readable description for error messages.
+
+    Returns:
+        pathlib.Path corresponding to the environment variable.
+    """
+
+    value = os.environ.get(var_name)
+    if not value:
+        human = description or var_name
+        raise ValueError(f"{human} is not set; export {var_name} before running inference.")
+
+    path = Path(value)
+
+    if expect_dir:
+        if path.exists():
+            if not path.is_dir():
+                raise NotADirectoryError(f"{var_name}={path} must be a directory, not a file.")
+        else:
+            if create:
+                path.mkdir(parents=True, exist_ok=True)
+            else:
+                human = description or var_name
+                raise FileNotFoundError(f"{human} directory does not exist: {path}")
+
+    return path
+
+
 def get_ckpt_path():
     ckpt_path = os.environ.get("MODEL_OUTPUT_PATH")
     if not ckpt_path:
@@ -269,6 +303,7 @@ def infer(args=None):
             top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
 
     top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
+    print("[infer] Inference complete.")
 
     print(f"[infer] Inference complete: produced recommendations for {len(user_list)} users")
     return top10s, user_list
