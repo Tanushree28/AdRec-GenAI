@@ -167,7 +167,6 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
         raise FileNotFoundError(
             f"predict_set.jsonl was not found under {data_root}. Export the Tencent candidate file before running inference."
         )
-    print(f"[infer] Loading candidate items from {candidate_path}")
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
@@ -198,7 +197,6 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
             retrieve_id2creative_id[retrieval_id] = creative_id
 
     # 保存候选库的embedding和sid
-    print(f"[infer] Saving candidate embeddings to {result_root}")
     model.save_item_emb(item_ids, retrieval_ids, features, str(result_root))
     with open(result_root / "retrive_id2creative_id.json", "w") as f:
         json.dump(retrieve_id2creative_id, f)
@@ -208,7 +206,6 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
 def infer():
     args = get_args()
     data_path = get_required_env_path("EVAL_DATA_PATH", expect_dir=True, description="Evaluation dataset")
-    print(f"[infer] Using evaluation dataset at: {data_path}")
     if (data_path / "predict_seq.jsonl").exists():
         validate_tencent_eval_dir(data_path)
     test_dataset = MyTestDataset(data_path, args)
@@ -240,7 +237,6 @@ def infer():
     result_root = get_required_env_path(
         "EVAL_RESULT_PATH", expect_dir=True, create=True, description="Evaluation result output"
     )
-    print(f"[infer] Writing inference artifacts to: {result_root}")
     retrieve_id2creative_id = get_candidate_emb(
         test_dataset.indexer['i'],
         test_dataset.feature_types,
@@ -280,13 +276,7 @@ def infer():
         )
 
     # 取出top-k
-    ann_output = result_root / "id100.u64bin"
-    if not ann_output.exists():
-        raise FileNotFoundError(
-            f"Expected ANN output {ann_output} was not created. Check the FAISS command output for errors."
-        )
-    print(f"[infer] Reading ANN results from {ann_output}")
-    top10s_retrieved = read_result_ids(ann_output)
+    top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
     top10s_untrimmed = []
     print("[infer] Converting retrieval ids to creative ids...")
     for top10 in tqdm(top10s_retrieved):
