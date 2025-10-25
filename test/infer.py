@@ -57,12 +57,21 @@ def get_ckpt_path():
     ckpt_path = os.environ.get("MODEL_OUTPUT_PATH")
     if not ckpt_path:
         raise ValueError("MODEL_OUTPUT_PATH is not set")
-    ckpt_dir = Path(ckpt_path)
-    if not ckpt_dir.exists():
-        raise FileNotFoundError(f"MODEL_OUTPUT_PATH does not exist: {ckpt_dir}")
-    if not ckpt_dir.is_dir():
-        raise NotADirectoryError(f"MODEL_OUTPUT_PATH must be a directory: {ckpt_dir}")
-    for item in sorted(ckpt_dir.iterdir()):
+    ckpt_path = Path(ckpt_path)
+    if not ckpt_path.exists():
+        raise FileNotFoundError(f"MODEL_OUTPUT_PATH does not exist: {ckpt_path}")
+
+    if ckpt_path.is_file():
+        if ckpt_path.suffix != ".pt":
+            raise ValueError(
+                f"MODEL_OUTPUT_PATH points to a file that is not a .pt checkpoint: {ckpt_path}"
+            )
+        return str(ckpt_path)
+
+    if not ckpt_path.is_dir():
+        raise NotADirectoryError(f"MODEL_OUTPUT_PATH must be a directory or .pt file: {ckpt_path}")
+
+    for item in sorted(ckpt_path.iterdir()):
         if item.suffix == ".pt":
             return str(item)
     raise FileNotFoundError("No .pt file found in MODEL_OUTPUT_PATH")
@@ -200,6 +209,7 @@ def infer():
         raise FileNotFoundError(f"EVAL_DATA_PATH does not exist: {data_path}")
     if not data_path.is_dir():
         raise NotADirectoryError(f"EVAL_DATA_PATH must be a directory: {data_path}")
+    print(f"[infer] Loading evaluation data from: {data_path}")
     test_dataset = MyTestDataset(data_path, args)
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, collate_fn=test_dataset.collate_fn
@@ -231,6 +241,7 @@ def infer():
         raise ValueError("EVAL_RESULT_PATH is not set")
     result_root = Path(result_root)
     result_root.mkdir(parents=True, exist_ok=True)
+    print(f"[infer] Writing inference artifacts to: {result_root}")
 
     retrieve_id2creative_id = get_candidate_emb(
         test_dataset.indexer['i'],
@@ -263,11 +274,10 @@ def infer():
         + str(result_root / "id100.u64bin")
         + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
     )
-    print("[infer] Running ANN retrieval command...")
-    ann_status = os.system(ann_cmd)
-    if ann_status != 0:
+    exit_code = os.system(ann_cmd)
+    if exit_code != 0:
         raise RuntimeError(
-            "ANN retrieval command failed. Ensure the faiss_demo binary is available and executable."
+            "FAISS demo command failed. Ensure the ANN binary is available at /workspace/faiss-based-ann/faiss_demo"
         )
 
     # 取出top-k

@@ -43,7 +43,7 @@ The script automatically creates a validation split (90/10) from the training da
 
 1. Set the environment variables:
    ```bash
-   export MODEL_OUTPUT_PATH=/path/to/a/folder/with/model.pt
+   export MODEL_OUTPUT_PATH=/path/to/a/folder/with/model.pt  # directory *or* the checkpoint file itself
    export EVAL_DATA_PATH=/path/to/eval/dataset/root
    export EVAL_RESULT_PATH=./eval_results
    mkdir -p "$EVAL_RESULT_PATH"
