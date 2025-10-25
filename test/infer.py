@@ -63,43 +63,23 @@ def get_ckpt_path():
     )
 
 
-def validate_tencent_eval_dir(data_dir: Path) -> str:
-    """Ensure the Tencent evaluation directory has the expected artifacts.
-
-    Returns the name of the sequence file that will be used (either
-    ``predict_seq.jsonl`` or ``seq.jsonl``).
-    """
-
-    base_required = ["indexer.pkl", "item_feat_dict.json", "predict_set.jsonl"]
-    missing_base = [filename for filename in base_required if not (data_dir / filename).exists()]
-    if missing_base:
+def validate_tencent_eval_dir(data_dir: Path):
+    required_files = [
+        "predict_seq.jsonl",
+        "predict_seq_offsets.pkl",
+        "indexer.pkl",
+        "item_feat_dict.json",
+        "seq.jsonl",
+        "seq_offsets.pkl",
+        "predict_set.jsonl",
+    ]
+    missing = [filename for filename in required_files if not (data_dir / filename).exists()]
+    if missing:
         raise FileNotFoundError(
             "Tencent evaluation directory is missing the following files: "
-            + ", ".join(missing_base)
+            + ", ".join(missing)
             + ". Verify that EVAL_DATA_PATH points to the preprocessed dataset root."
         )
-
-    sequence_pairs = [
-        ("predict_seq.jsonl", "predict_seq_offsets.pkl"),
-        ("seq.jsonl", "seq_offsets.pkl"),
-    ]
-
-    for seq_name, offsets_name in sequence_pairs:
-        seq_path = data_dir / seq_name
-        offsets_path = data_dir / offsets_name
-        if seq_path.exists() and offsets_path.exists():
-            return seq_name
-        if seq_path.exists() ^ offsets_path.exists():
-            missing = offsets_name if seq_path.exists() else seq_name
-            raise FileNotFoundError(
-                f"Found {seq_path if seq_path.exists() else offsets_path} but missing {missing}."
-                " Ensure both files from the same preprocessing step are present."
-            )
-
-    raise FileNotFoundError(
-        "Tencent evaluation directory is missing predict_seq.jsonl/predict_seq_offsets.pkl "
-        "and seq.jsonl/seq_offsets.pkl. Provide at least one processed sequence set."
-    )
 
 
 def get_args():
@@ -187,7 +167,6 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
         raise FileNotFoundError(
             f"predict_set.jsonl was not found under {data_root}. Export the Tencent candidate file before running inference."
         )
-    print(f"[infer] Loading candidate items from {candidate_path}")
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
@@ -218,7 +197,6 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
             retrieve_id2creative_id[retrieval_id] = creative_id
 
     # 保存候选库的embedding和sid
-    print(f"[infer] Saving candidate embeddings to {result_root}")
     model.save_item_emb(item_ids, retrieval_ids, features, str(result_root))
     with open(result_root / "retrive_id2creative_id.json", "w") as f:
         json.dump(retrieve_id2creative_id, f)
@@ -228,8 +206,8 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
 def infer():
     args = get_args()
     data_path = get_required_env_path("EVAL_DATA_PATH", expect_dir=True, description="Evaluation dataset")
-    sequence_file = validate_tencent_eval_dir(data_path)
-    print(f"[infer] Using evaluation dataset at: {data_path} (sequence source: {sequence_file})")
+    if (data_path / "predict_seq.jsonl").exists():
+        validate_tencent_eval_dir(data_path)
     test_dataset = MyTestDataset(data_path, args)
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, collate_fn=test_dataset.collate_fn
@@ -244,9 +222,7 @@ def infer():
     model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
     all_embs = []
     user_list = []
-    print(
-        f"[infer] Generating user embeddings from {test_dataset.sequence_source} for {len(test_loader)} batches..."
-    )
+    print(f"[infer] Generating user embeddings for {len(test_loader)} batches...")
     for step, batch in tqdm(enumerate(test_loader), total=len(test_loader)):
 
         seq, token_type, seq_feat, user_id = batch
@@ -261,7 +237,6 @@ def infer():
     result_root = get_required_env_path(
         "EVAL_RESULT_PATH", expect_dir=True, create=True, description="Evaluation result output"
     )
-    print(f"[infer] Writing inference artifacts to: {result_root}")
     retrieve_id2creative_id = get_candidate_emb(
         test_dataset.indexer['i'],
         test_dataset.feature_types,
@@ -301,13 +276,7 @@ def infer():
         )
 
     # 取出top-k
-    ann_output = result_root / "id100.u64bin"
-    if not ann_output.exists():
-        raise FileNotFoundError(
-            f"Expected ANN output {ann_output} was not created. Check the FAISS command output for errors."
-        )
-    print(f"[infer] Reading ANN results from {ann_output}")
-    top10s_retrieved = read_result_ids(ann_output)
+    top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
     top10s_untrimmed = []
     print("[infer] Converting retrieval ids to creative ids...")
     for top10 in tqdm(top10s_retrieved):
