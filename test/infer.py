@@ -302,6 +302,7 @@ def infer(args=None):
             top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
 
     top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
+    print("[infer] Inference complete.")
 
     print(f"[infer] Inference complete: produced recommendations for {len(user_list)} users")
     return top10s, user_list
