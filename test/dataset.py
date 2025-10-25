@@ -38,6 +38,7 @@ class MyDataset(torch.utils.data.Dataset):
         """
         super().__init__()
         self.data_dir = Path(data_dir)
+        print(f"[dataset] Initializing dataset from {self.data_dir}")
         self._load_data_and_offsets()
         self.maxlen = args.maxlen
         self.mm_emb_ids = args.mm_emb_id
@@ -58,9 +59,13 @@ class MyDataset(torch.utils.data.Dataset):
         """
         加载用户序列数据和每一行的文件偏移量(预处理好的), 用于快速随机访问数据并I/O
         """
-        self.data_file = open(self.data_dir / "seq.jsonl", 'rb')
-        with open(Path(self.data_dir, 'seq_offsets.pkl'), 'rb') as f:
+        seq_path = self.data_dir / "seq.jsonl"
+        offsets_path = Path(self.data_dir, 'seq_offsets.pkl')
+        self.data_file = open(seq_path, 'rb')
+        with open(offsets_path, 'rb') as f:
             self.seq_offsets = pickle.load(f)
+        self._num_users = len(self.seq_offsets)
+        print(f"[dataset] Loaded {self._num_users} user sequences from {seq_path}")
 
     def _load_user_data(self, uid):
         """
@@ -176,7 +181,7 @@ class MyDataset(torch.utils.data.Dataset):
         Returns:
             usernum: 用户数量
         """
-        return len(self.seq_offsets)
+        return getattr(self, "_num_users", len(self.seq_offsets))
 
     def _init_feat_info(self):
         """
@@ -323,6 +328,10 @@ class MyTestDataset(MyDataset):
         self._offsets_path = offsets_path
         with open(offsets_path, 'rb') as f:
             self.seq_offsets = pickle.load(f)
+        self._num_users = len(self.seq_offsets)
+        print(
+            f"[dataset] Evaluation sequences loaded from {seq_path.name} ({self._num_users} users detected)"
+        )
 
     def _process_cold_start_feat(self, feat):
         """
@@ -411,10 +420,7 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        offsets_path = getattr(self, "_offsets_path", self.data_dir / 'predict_seq_offsets.pkl')
-        with open(offsets_path, 'rb') as f:
-            temp = pickle.load(f)
-        return len(temp)
+        return getattr(self, "_num_users", len(self.seq_offsets))
 
     @staticmethod
     def collate_fn(batch):
@@ -448,7 +454,7 @@ def save_emb(emb, save_path):
     """
     num_points = emb.shape[0]  # 数据点数量
     num_dimensions = emb.shape[1]  # 向量的维度
-    print(f'saving {save_path}')
+    print(f"[infer] Saving embeddings to {save_path}")
     with open(Path(save_path), 'wb') as f:
         f.write(struct.pack('II', num_points, num_dimensions))
         emb.tofile(f)

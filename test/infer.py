@@ -162,6 +162,7 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
     candidate_path = data_root / 'predict_set.jsonl'
     if not candidate_path.exists():
         raise FileNotFoundError(f"predict_set.jsonl not found under {data_root}")
+    print(f"[infer] Loading candidate set from {candidate_path}")
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
@@ -193,14 +194,25 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
 
     # 保存候选库的embedding和sid
     result_root.mkdir(parents=True, exist_ok=True)
+    print(f"[infer] Encoding {len(item_ids)} candidate items")
     model.save_item_emb(item_ids, retrieval_ids, features, str(result_root))
     with open(result_root / "retrive_id2creative_id.json", "w") as f:
         json.dump(retrieve_id2creative_id, f)
+    print(
+        f"[infer] Candidate artifacts saved to {result_root} (retrive_id2creative_id.json, embedding/id files)"
+    )
     return retrieve_id2creative_id
 
 
-def infer():
-    args = get_args()
+def infer(args=None):
+    args = args or get_args()
+    print("[infer] Parsed arguments:")
+    for key in sorted(vars(args)):
+        if key == "mm_emb_id":
+            continue
+        value = getattr(args, key)
+        print(f"    {key}: {value}")
+    print(f"    mm_emb_id: {', '.join(args.mm_emb_id)}")
     data_path = os.environ.get('EVAL_DATA_PATH')
     if not data_path:
         raise ValueError("EVAL_DATA_PATH is not set")
@@ -211,9 +223,13 @@ def infer():
         raise NotADirectoryError(f"EVAL_DATA_PATH must be a directory: {data_path}")
     print(f"[infer] Loading evaluation data from: {data_path}")
     test_dataset = MyTestDataset(data_path, args)
+    sequence_source = getattr(test_dataset, "sequence_source", "seq.jsonl")
+    num_users = len(test_dataset)
+    print(f"[infer] Using sequence file: {sequence_source} | users detected: {num_users}")
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, collate_fn=test_dataset.collate_fn
     )
+    num_batches = len(test_loader)
     usernum, itemnum = test_dataset.usernum, test_dataset.itemnum
     feat_statistics, feat_types = test_dataset.feat_statistics, test_dataset.feature_types
     model = BaselineModel(usernum, itemnum, feat_statistics, feat_types, args).to(args.device)
@@ -224,8 +240,8 @@ def infer():
     model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
     all_embs = []
     user_list = []
-    print(f"[infer] Generating user embeddings for {len(test_loader)} batches...")
-    for step, batch in tqdm(enumerate(test_loader), total=len(test_loader)):
+    print(f"[infer] Starting query embedding export across {num_batches} batches")
+    for step, batch in tqdm(enumerate(test_loader), total=num_batches, desc="Query batches"):
 
         seq, token_type, seq_feat, user_id = batch
         seq = seq.to(args.device)
@@ -253,12 +269,9 @@ def infer():
         result_root=result_root,
     )
     if not all_embs:
-        raise ValueError(
-            "No user embeddings were generated. Check that predict_seq.jsonl contains evaluation sequences and that "
-            "EVAL_DATA_PATH is set to the evaluation dataset root."
-        )
+        raise ValueError("No query embeddings were generated. Check that the evaluation dataset is not empty.")
     all_embs = np.concatenate(all_embs, axis=0)
-    print(f"[infer] Exporting {all_embs.shape[0]} user embeddings to {result_root / 'query.fbin'}")
+    print(f"[infer] Query embedding matrix shape: {all_embs.shape}")
     # 保存query文件
     save_emb(all_embs, result_root / 'query.fbin')
     # ANN 检索
@@ -274,6 +287,7 @@ def infer():
         + str(result_root / "id100.u64bin")
         + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
     )
+    print(f"[infer] Running ANN retrieval command:\n{ann_cmd}")
     exit_code = os.system(ann_cmd)
     if exit_code != 0:
         raise RuntimeError(
@@ -281,14 +295,35 @@ def infer():
         )
 
     # 取出top-k
+    print(f"[infer] Reading ANN results from {result_root / 'id100.u64bin'}")
     top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
     top10s_untrimmed = []
-    print("[infer] Converting retrieval ids to creative ids...")
-    for top10 in tqdm(top10s_retrieved):
+    for top10 in tqdm(top10s_retrieved, desc="Mapping ANN IDs"):
         for item in top10:
             top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
 
     top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
     print("[infer] Inference complete.")
 
+    print(f"[infer] Inference complete: produced recommendations for {len(user_list)} users")
     return top10s, user_list
+
+
+def main():
+    try:
+        top10s, user_list = infer()
+    except Exception as exc:
+        print(f"[infer] ERROR: {exc}", file=sys.stderr)
+        raise
+
+    if user_list:
+        preview = top10s[0] if top10s else []
+        print(
+            f"[infer] Example user {user_list[0]} top-10 list: {preview if preview else 'no results'}"
+        )
+    else:
+        print("[infer] No users were processed.")
+
+
+if __name__ == "__main__":
+    main()
