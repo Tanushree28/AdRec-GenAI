@@ -19,6 +19,40 @@ from dataset import MyTestDataset, save_emb
 from model import BaselineModel
 
 
+def get_required_env_path(var_name, expect_dir=False, create=False, description=None):
+    """Resolve a filesystem path from an environment variable.
+
+    Args:
+        var_name: Environment variable to read.
+        expect_dir: Whether the path should exist and be a directory.
+        create: If True and expect_dir is True, create the directory when missing.
+        description: Optional human readable description for error messages.
+
+    Returns:
+        pathlib.Path corresponding to the environment variable.
+    """
+
+    value = os.environ.get(var_name)
+    if not value:
+        human = description or var_name
+        raise ValueError(f"{human} is not set; export {var_name} before running inference.")
+
+    path = Path(value)
+
+    if expect_dir:
+        if path.exists():
+            if not path.is_dir():
+                raise NotADirectoryError(f"{var_name}={path} must be a directory, not a file.")
+        else:
+            if create:
+                path.mkdir(parents=True, exist_ok=True)
+            else:
+                human = description or var_name
+                raise FileNotFoundError(f"{human} directory does not exist: {path}")
+
+    return path
+
+
 def get_ckpt_path():
     ckpt_path = os.environ.get("MODEL_OUTPUT_PATH")
     if not ckpt_path:
@@ -190,6 +224,7 @@ def infer():
     model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
     all_embs = []
     user_list = []
+    print(f"[infer] Generating user embeddings for {len(test_loader)} batches...")
     for step, batch in tqdm(enumerate(test_loader), total=len(test_loader)):
 
         seq, token_type, seq_feat, user_id = batch
@@ -217,7 +252,13 @@ def infer():
         data_root=data_path,
         result_root=result_root,
     )
+    if not all_embs:
+        raise ValueError(
+            "No user embeddings were generated. Check that predict_seq.jsonl contains evaluation sequences and that "
+            "EVAL_DATA_PATH is set to the evaluation dataset root."
+        )
     all_embs = np.concatenate(all_embs, axis=0)
+    print(f"[infer] Exporting {all_embs.shape[0]} user embeddings to {result_root / 'query.fbin'}")
     # 保存query文件
     save_emb(all_embs, result_root / 'query.fbin')
     # ANN 检索
@@ -242,10 +283,12 @@ def infer():
     # 取出top-k
     top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
     top10s_untrimmed = []
+    print("[infer] Converting retrieval ids to creative ids...")
     for top10 in tqdm(top10s_retrieved):
         for item in top10:
             top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
 
     top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
+    print("[infer] Inference complete.")
 
     return top10s, user_list
