@@ -19,38 +19,36 @@ from dataset import MyTestDataset, save_emb
 from model import BaselineModel
 
 
-def get_required_env_path(var_name, expect_dir=False, create=False, description=None):
-    """Resolve a filesystem path from an environment variable.
+def normalise_device(device_str: str) -> str:
+    """Validate the requested device string and fall back to CPU when unavailable."""
 
-    Args:
-        var_name: Environment variable to read.
-        expect_dir: Whether the path should exist and be a directory.
-        create: If True and expect_dir is True, create the directory when missing.
-        description: Optional human readable description for error messages.
+    requested = (device_str or "cpu").strip()
 
-    Returns:
-        pathlib.Path corresponding to the environment variable.
-    """
+    try:
+        device = torch.device(requested)
+    except (TypeError, RuntimeError):
+        print(
+            f"[infer] WARNING: Unrecognised device '{requested}'; defaulting to CPU.",
+            file=sys.stderr,
+        )
+        return "cpu"
 
-    value = os.environ.get(var_name)
-    if not value:
-        human = description or var_name
-        raise ValueError(f"{human} is not set; export {var_name} before running inference.")
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            print(
+                f"[infer] WARNING: CUDA requested ('{requested}') but torch reports no CUDA support. Using CPU instead.",
+                file=sys.stderr,
+            )
+            return "cpu"
+    elif device.type == "mps":
+        if not hasattr(torch.backends, "mps") or not torch.backends.mps.is_available():
+            print(
+                f"[infer] WARNING: MPS requested ('{requested}') but is not available. Using CPU instead.",
+                file=sys.stderr,
+            )
+            return "cpu"
 
-    path = Path(value)
-
-    if expect_dir:
-        if path.exists():
-            if not path.is_dir():
-                raise NotADirectoryError(f"{var_name}={path} must be a directory, not a file.")
-        else:
-            if create:
-                path.mkdir(parents=True, exist_ok=True)
-            else:
-                human = description or var_name
-                raise FileNotFoundError(f"{human} directory does not exist: {path}")
-
-    return path
+    return str(device)
 
 
 def get_ckpt_path():
@@ -206,6 +204,7 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
 
 def infer(args=None):
     args = args or get_args()
+    args.device = normalise_device(getattr(args, "device", "cpu"))
     print("[infer] Parsed arguments:")
     for key in sorted(vars(args)):
         if key == "mm_emb_id":
