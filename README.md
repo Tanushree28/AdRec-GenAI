@@ -14,7 +14,7 @@ This project contains a baseline pipeline for generative ad recommendation.  It 
 
 The data loader detects which dataset is available at `TRAIN_DATA_PATH`:
 
-- **Tencent preprocessed data** – provide the folder that contains `seq.jsonl`, `predict_seq.jsonl`, and the accompanying `*_offsets.pkl` files.
+- **Tencent preprocessed data** – provide the folder that contains `seq.jsonl` (always required) and the accompanying `*_offsets.pkl` files.  If `predict_seq.jsonl`/`predict_seq_offsets.pkl` are also present they will be used during inference; otherwise the loader falls back to the training sequences.
 - **KuaiRec** – provide the folder that contains the CSV files (for the light-weight release this is typically `data/small_matrix.csv`, `user_features.csv`, and `item_categories.csv`).  You can download the dataset from [https://kuairec.com/](https://kuairec.com/) and extract it under `data/KuaiRec`.  The loader will look for CSVs in the root you pass as well as in a nested `data/` directory.
 
 > **Tip:** when using KuaiRec, multi-modal embedding IDs (`--mm_emb_id`) are ignored automatically because the dataset does not ship with those features.
@@ -43,7 +43,7 @@ The script automatically creates a validation split (90/10) from the training da
 
 1. Set the environment variables:
    ```bash
-   export MODEL_OUTPUT_PATH=/path/to/a/folder/with/model.pt
+   export MODEL_OUTPUT_PATH=/path/to/a/folder/with/model.pt  # directory *or* the checkpoint file itself
    export EVAL_DATA_PATH=/path/to/eval/dataset/root
    export EVAL_RESULT_PATH=./eval_results
    mkdir -p "$EVAL_RESULT_PATH"

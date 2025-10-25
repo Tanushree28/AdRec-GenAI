@@ -21,11 +21,26 @@ from model import BaselineModel
 
 def get_ckpt_path():
     ckpt_path = os.environ.get("MODEL_OUTPUT_PATH")
-    if ckpt_path is None:
+    if not ckpt_path:
         raise ValueError("MODEL_OUTPUT_PATH is not set")
-    for item in os.listdir(ckpt_path):
-        if item.endswith(".pt"):
-            return os.path.join(ckpt_path, item)
+    ckpt_path = Path(ckpt_path)
+    if not ckpt_path.exists():
+        raise FileNotFoundError(f"MODEL_OUTPUT_PATH does not exist: {ckpt_path}")
+
+    if ckpt_path.is_file():
+        if ckpt_path.suffix != ".pt":
+            raise ValueError(
+                f"MODEL_OUTPUT_PATH points to a file that is not a .pt checkpoint: {ckpt_path}"
+            )
+        return str(ckpt_path)
+
+    if not ckpt_path.is_dir():
+        raise NotADirectoryError(f"MODEL_OUTPUT_PATH must be a directory or .pt file: {ckpt_path}")
+
+    for item in sorted(ckpt_path.iterdir()):
+        if item.suffix == ".pt":
+            return str(item)
+    raise FileNotFoundError("No .pt file found in MODEL_OUTPUT_PATH")
 
 
 def get_args():
@@ -94,7 +109,7 @@ def process_cold_start_feat(feat):
     return processed_feat
 
 
-def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model):
+def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model, data_root=None, result_root=None):
     """
     生产候选库item的id和embedding
 
@@ -108,7 +123,11 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
         retrieve_id2creative_id: 索引id->creative_id的dict
     """
     EMB_SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
-    candidate_path = Path(os.environ.get('EVAL_DATA_PATH'), 'predict_set.jsonl')
+    data_root = Path(data_root) if data_root is not None else Path(os.environ.get('EVAL_DATA_PATH'))
+    result_root = Path(result_root) if result_root is not None else Path(os.environ.get('EVAL_RESULT_PATH'))
+    candidate_path = data_root / 'predict_set.jsonl'
+    if not candidate_path.exists():
+        raise FileNotFoundError(f"predict_set.jsonl not found under {data_root}")
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
@@ -139,8 +158,9 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
             retrieve_id2creative_id[retrieval_id] = creative_id
 
     # 保存候选库的embedding和sid
-    model.save_item_emb(item_ids, retrieval_ids, features, os.environ.get('EVAL_RESULT_PATH'))
-    with open(Path(os.environ.get('EVAL_RESULT_PATH'), "retrive_id2creative_id.json"), "w") as f:
+    result_root.mkdir(parents=True, exist_ok=True)
+    model.save_item_emb(item_ids, retrieval_ids, features, str(result_root))
+    with open(result_root / "retrive_id2creative_id.json", "w") as f:
         json.dump(retrieve_id2creative_id, f)
     return retrieve_id2creative_id
 
@@ -148,6 +168,14 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
 def infer():
     args = get_args()
     data_path = os.environ.get('EVAL_DATA_PATH')
+    if not data_path:
+        raise ValueError("EVAL_DATA_PATH is not set")
+    data_path = Path(data_path)
+    if not data_path.exists():
+        raise FileNotFoundError(f"EVAL_DATA_PATH does not exist: {data_path}")
+    if not data_path.is_dir():
+        raise NotADirectoryError(f"EVAL_DATA_PATH must be a directory: {data_path}")
+    print(f"[infer] Loading evaluation data from: {data_path}")
     test_dataset = MyTestDataset(data_path, args)
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, collate_fn=test_dataset.collate_fn
@@ -158,6 +186,7 @@ def infer():
     model.eval()
 
     ckpt_path = get_ckpt_path()
+    print(f"[infer] Loading checkpoint: {ckpt_path}")
     model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
     all_embs = []
     user_list = []
@@ -172,33 +201,46 @@ def infer():
         user_list += user_id
 
     # 生成候选库的embedding 以及 id文件
+    result_root = os.environ.get('EVAL_RESULT_PATH')
+    if not result_root:
+        raise ValueError("EVAL_RESULT_PATH is not set")
+    result_root = Path(result_root)
+    result_root.mkdir(parents=True, exist_ok=True)
+    print(f"[infer] Writing inference artifacts to: {result_root}")
+
     retrieve_id2creative_id = get_candidate_emb(
         test_dataset.indexer['i'],
         test_dataset.feature_types,
         test_dataset.feature_default_value,
         test_dataset.mm_emb_dict,
         model,
+        data_root=data_path,
+        result_root=result_root,
     )
     all_embs = np.concatenate(all_embs, axis=0)
     # 保存query文件
-    save_emb(all_embs, Path(os.environ.get('EVAL_RESULT_PATH'), 'query.fbin'))
+    save_emb(all_embs, result_root / 'query.fbin')
     # ANN 检索
     ann_cmd = (
         str(Path("/workspace", "faiss-based-ann", "faiss_demo"))
         + " --dataset_vector_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "embedding.fbin"))
+        + str(result_root / "embedding.fbin")
         + " --dataset_id_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "id.u64bin"))
+        + str(result_root / "id.u64bin")
         + " --query_vector_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "query.fbin"))
+        + str(result_root / "query.fbin")
         + " --result_id_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "id100.u64bin"))
+        + str(result_root / "id100.u64bin")
         + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
     )
-    os.system(ann_cmd)
+    exit_code = os.system(ann_cmd)
+    if exit_code != 0:
+        raise RuntimeError(
+            "FAISS demo command failed. Ensure the ANN binary is available at /workspace/faiss-based-ann/faiss_demo"
+        )
 
     # 取出top-k
-    top10s_retrieved = read_result_ids(Path(os.environ.get("EVAL_RESULT_PATH"), "id100.u64bin"))
+    top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
     top10s_untrimmed = []
     for top10 in tqdm(top10s_retrieved):
         for item in top10:
