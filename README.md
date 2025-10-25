@@ -55,6 +55,26 @@ The script automatically creates a validation split (90/10) from the training da
 
 `test/infer.py` loads the same dataset format as training, exports user embeddings to `query.fbin`, and (when the FAISS demo binaries are available under `/workspace/faiss-based-ann`) performs approximate nearest-neighbour retrieval.  The script writes its outputs to `EVAL_RESULT_PATH`.
 
+### Inspecting the inference artifacts
+
+Every run leaves a small bundle of files in `EVAL_RESULT_PATH`:
+
+| File | Contents |
+| ---- | -------- |
+| `query.fbin` | Float32 matrix whose rows are the exported user embeddings. |
+| `embedding.fbin` | Float32 matrix with one row per candidate item embedding. |
+| `id.u64bin` | Unsigned 64-bit integer array that pairs with `embedding.fbin` (one retrieval ID per row). |
+| `id100.u64bin` *(optional)* | ANN retrieval output, containing the top-k retrieval IDs per user. Present only when the FAISS binary runs successfully. |
+| `retrive_id2creative_id.json` | Mapping from retrieval IDs back to the original creative IDs. |
+
+To preview these files without writing custom parsers, run:
+
+```bash
+python tools/dump_eval_results.py ./eval_results --sample-users 3 --write-json preview.json
+```
+
+The helper prints the matrix shapes, shows the first few recommendation lists (falling back to retrieval IDs if the ANN stage was skipped), and optionally stores the preview in JSON for downstream inspection.
+
 ## 5. Optional: quantising multi-modal embeddings
 
 The `train/model_rqvae.py` file sketches an RQ-VAE / k-means workflow for compressing external multimedia embeddings into discrete semantic IDs.  This step is optional and only relevant when working with the Tencent dataset's large embedding files.
