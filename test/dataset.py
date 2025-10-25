@@ -303,8 +303,25 @@ class MyTestDataset(MyDataset):
         super().__init__(data_dir, args)
 
     def _load_data_and_offsets(self):
-        self.data_file = open(self.data_dir / "predict_seq.jsonl", 'rb')
-        with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        predict_seq = self.data_dir / "predict_seq.jsonl"
+        predict_offsets = self.data_dir / "predict_seq_offsets.pkl"
+        default_seq = self.data_dir / "seq.jsonl"
+        default_offsets = self.data_dir / "seq_offsets.pkl"
+
+        if predict_seq.exists() and predict_offsets.exists():
+            self.sequence_source = "predict_seq.jsonl"
+            seq_path, offsets_path = predict_seq, predict_offsets
+        elif default_seq.exists() and default_offsets.exists():
+            self.sequence_source = "seq.jsonl"
+            seq_path, offsets_path = default_seq, default_offsets
+        else:
+            raise FileNotFoundError(
+                "Neither predict_seq nor seq files were found in the evaluation dataset directory."
+            )
+
+        self.data_file = open(seq_path, 'rb')
+        self._offsets_path = offsets_path
+        with open(offsets_path, 'rb') as f:
             self.seq_offsets = pickle.load(f)
 
     def _process_cold_start_feat(self, feat):
@@ -394,7 +411,8 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        offsets_path = getattr(self, "_offsets_path", self.data_dir / 'predict_seq_offsets.pkl')
+        with open(offsets_path, 'rb') as f:
             temp = pickle.load(f)
         return len(temp)
 
