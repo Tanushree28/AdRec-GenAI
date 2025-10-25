@@ -141,7 +141,16 @@ def process_cold_start_feat(feat):
     return processed_feat
 
 
-def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model, data_root=None, result_root=None):
+def get_candidate_emb(
+    indexer,
+    feat_types,
+    feat_default_value,
+    mm_emb_dict,
+    model,
+    data_root=None,
+    result_root=None,
+    item_feat_dict=None,
+):
     """
     生产候选库item的id和embedding
 
@@ -158,26 +167,65 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
     data_root = Path(data_root) if data_root is not None else Path(os.environ.get('EVAL_DATA_PATH'))
     result_root = Path(result_root) if result_root is not None else Path(os.environ.get('EVAL_RESULT_PATH'))
     candidate_path = data_root / 'predict_set.jsonl'
-    if not candidate_path.exists():
-        raise FileNotFoundError(f"predict_set.jsonl not found under {data_root}")
-    print(f"[infer] Loading candidate set from {candidate_path}")
+    use_predict_set = candidate_path.exists()
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
-    with open(candidate_path, 'r') as f:
-        for line in f:
-            line = json.loads(line)
-            # 读取item特征，并补充缺失值
-            feature = line['features']
-            creative_id = line['creative_id']
-            retrieval_id = line['retrieval_id']
-            item_id = indexer[creative_id] if creative_id in indexer else 0
+    if use_predict_set:
+        print(f"[infer] Loading candidate set from {candidate_path}")
+        with open(candidate_path, 'r') as f:
+            for line in f:
+                line = json.loads(line)
+                feature = line['features']
+                creative_id = line['creative_id']
+                retrieval_id = line['retrieval_id']
+                item_id = indexer.get(creative_id, 0)
+
+                feature = process_cold_start_feat(feature)
+                missing_fields = set(
+                    feat_types['item_sparse'] + feat_types['item_array'] + feat_types['item_continual']
+                ) - set(feature.keys())
+                for feat_id in missing_fields:
+                    feature[feat_id] = feat_default_value[feat_id]
+
+                for feat_id in feat_types['item_emb']:
+                    emb_lookup = mm_emb_dict.get(feat_id, {})
+                    if creative_id in emb_lookup:
+                        feature[feat_id] = emb_lookup[creative_id]
+                    else:
+                        feature[feat_id] = np.zeros(EMB_SHAPE_DICT[feat_id], dtype=np.float32)
+
+                item_ids.append(item_id)
+                creative_ids.append(creative_id)
+                retrieval_ids.append(retrieval_id)
+                features.append(feature)
+                retrieve_id2creative_id[retrieval_id] = creative_id
+    else:
+        if item_feat_dict is None:
+            item_feat_path = data_root / 'item_feat_dict.json'
+            if not item_feat_path.exists():
+                raise FileNotFoundError(
+                    "predict_set.jsonl not found under "
+                    f"{data_root} and item_feat_dict.json is unavailable for fallback"
+                )
+            with open(item_feat_path, 'r') as f:
+                item_feat_dict = json.load(f)
+        print(
+            "[infer] WARNING: predict_set.jsonl not found; generating candidate set from item_feat_dict"
+        )
+        for creative_id, raw_feature in item_feat_dict.items():
+            item_id = indexer.get(creative_id)
+            if item_id is None:
+                continue
+            retrieval_id = item_id
+            feature = process_cold_start_feat(raw_feature or {})
+
             missing_fields = set(
                 feat_types['item_sparse'] + feat_types['item_array'] + feat_types['item_continual']
             ) - set(feature.keys())
-            feature = process_cold_start_feat(feature)
             for feat_id in missing_fields:
                 feature[feat_id] = feat_default_value[feat_id]
+
             for feat_id in feat_types['item_emb']:
                 emb_lookup = mm_emb_dict.get(feat_id, {})
                 if creative_id in emb_lookup:
@@ -299,6 +347,7 @@ def infer(args=None):
         model,
         data_root=data_path,
         result_root=result_root,
+        item_feat_dict=getattr(test_dataset, 'item_feat_dict', None),
     )
     if not all_embs:
         raise ValueError("No query embeddings were generated. Check that the evaluation dataset is not empty.")
