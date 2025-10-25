@@ -218,9 +218,11 @@ def infer():
     model.eval()
 
     ckpt_path = get_ckpt_path()
+    print(f"[infer] Loading checkpoint: {ckpt_path}")
     model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
     all_embs = []
     user_list = []
+    print(f"[infer] Generating user embeddings for {len(test_loader)} batches...")
     for step, batch in tqdm(enumerate(test_loader), total=len(test_loader)):
 
         seq, token_type, seq_feat, user_id = batch
@@ -250,6 +252,7 @@ def infer():
             "EVAL_DATA_PATH is set to the evaluation dataset root."
         )
     all_embs = np.concatenate(all_embs, axis=0)
+    print(f"[infer] Exporting {all_embs.shape[0]} user embeddings to {result_root / 'query.fbin'}")
     # 保存query文件
     save_emb(all_embs, result_root / 'query.fbin')
     # ANN 检索
@@ -265,15 +268,22 @@ def infer():
         + str(result_root / "id100.u64bin")
         + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
     )
-    os.system(ann_cmd)
+    print("[infer] Running ANN retrieval command...")
+    ann_status = os.system(ann_cmd)
+    if ann_status != 0:
+        raise RuntimeError(
+            "ANN retrieval command failed. Ensure the faiss_demo binary is available and executable."
+        )
 
     # 取出top-k
     top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
     top10s_untrimmed = []
+    print("[infer] Converting retrieval ids to creative ids...")
     for top10 in tqdm(top10s_retrieved):
         for item in top10:
             top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
 
     top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
+    print("[infer] Inference complete.")
 
     return top10s, user_list
