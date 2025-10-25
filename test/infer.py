@@ -210,15 +210,52 @@ def get_candidate_emb(
                 )
             with open(item_feat_path, 'r') as f:
                 item_feat_dict = json.load(f)
+
+        if not isinstance(item_feat_dict, dict):
+            item_feat_dict = {}
+
         print(
             "[infer] WARNING: predict_set.jsonl not found; generating candidate set from item_feat_dict"
         )
-        for creative_id, raw_feature in item_feat_dict.items():
-            item_id = indexer.get(creative_id)
-            if item_id is None:
+
+        def _resolve_feature_for_creative(raw_map, creative_key, item_id_value):
+            """Return a feature dict for the given creative, trying common key variants."""
+
+            if not isinstance(raw_map, dict):
+                return None
+
+            candidate_keys = []
+
+            # Preserve original key as string
+            candidate_keys.append(str(creative_key))
+
+            # Some JSON dumps store numeric IDs without quotes; try the original
+            candidate_keys.append(creative_key)
+
+            # Include numeric conversions for both the creative ID and the retrieval ID
+            try:
+                candidate_keys.append(int(creative_key))
+            except (TypeError, ValueError):
+                pass
+
+            candidate_keys.extend([item_id_value, str(item_id_value)])
+
+            for key in dict.fromkeys(candidate_keys):
+                if key in raw_map:
+                    return raw_map[key]
+            return None
+
+        # ``indexer`` maps creative_id -> item_id. Iterate over it so we cover
+        # every item observed during training even if the feature dict omits a
+        # few entries (we will fill defaults in that case).
+        for creative_id, item_id in sorted(indexer.items(), key=lambda kv: kv[1]):
+            if item_id in (None, 0):
                 continue
-            retrieval_id = item_id
-            feature = process_cold_start_feat(raw_feature or {})
+            feature_data = _resolve_feature_for_creative(
+                item_feat_dict, creative_id, item_id
+            )
+
+            feature = process_cold_start_feat(feature_data or {})
 
             missing_fields = set(
                 feat_types['item_sparse'] + feat_types['item_array'] + feat_types['item_continual']
@@ -228,16 +265,32 @@ def get_candidate_emb(
 
             for feat_id in feat_types['item_emb']:
                 emb_lookup = mm_emb_dict.get(feat_id, {})
+                emb_value = None
                 if creative_id in emb_lookup:
-                    feature[feat_id] = emb_lookup[creative_id]
-                else:
-                    feature[feat_id] = np.zeros(EMB_SHAPE_DICT[feat_id], dtype=np.float32)
+                    emb_value = emb_lookup[creative_id]
+                elif str(creative_id) in emb_lookup:
+                    emb_value = emb_lookup[str(creative_id)]
+                elif item_id in emb_lookup:
+                    emb_value = emb_lookup[item_id]
+                elif str(item_id) in emb_lookup:
+                    emb_value = emb_lookup[str(item_id)]
+
+                if emb_value is None:
+                    emb_value = np.zeros(EMB_SHAPE_DICT[feat_id], dtype=np.float32)
+
+                feature[feat_id] = emb_value
 
             item_ids.append(item_id)
             creative_ids.append(creative_id)
-            retrieval_ids.append(retrieval_id)
+            retrieval_ids.append(item_id)
             features.append(feature)
-            retrieve_id2creative_id[retrieval_id] = creative_id
+            retrieve_id2creative_id[item_id] = creative_id
+
+    if not item_ids:
+        raise ValueError(
+            "No candidate items could be constructed. Ensure predict_set.jsonl or item_feat_dict.json "
+            "contains entries matching the training indexer."
+        )
 
     # 保存候选库的embedding和sid
     result_root.mkdir(parents=True, exist_ok=True)
