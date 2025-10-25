@@ -54,32 +54,18 @@ def get_required_env_path(var_name, expect_dir=False, create=False, description=
 
 
 def get_ckpt_path():
-    ckpt_dir = get_required_env_path("MODEL_OUTPUT_PATH", expect_dir=True, description="Checkpoint directory")
-    for item in sorted(os.listdir(ckpt_dir)):
-        if item.endswith(".pt"):
-            return os.path.join(ckpt_dir, item)
-    raise FileNotFoundError(
-        "No .pt files were found inside MODEL_OUTPUT_PATH. Ensure you point to a checkpoint folder containing model.pt."
-    )
-
-
-def validate_tencent_eval_dir(data_dir: Path):
-    required_files = [
-        "predict_seq.jsonl",
-        "predict_seq_offsets.pkl",
-        "indexer.pkl",
-        "item_feat_dict.json",
-        "seq.jsonl",
-        "seq_offsets.pkl",
-        "predict_set.jsonl",
-    ]
-    missing = [filename for filename in required_files if not (data_dir / filename).exists()]
-    if missing:
-        raise FileNotFoundError(
-            "Tencent evaluation directory is missing the following files: "
-            + ", ".join(missing)
-            + ". Verify that EVAL_DATA_PATH points to the preprocessed dataset root."
-        )
+    ckpt_path = os.environ.get("MODEL_OUTPUT_PATH")
+    if not ckpt_path:
+        raise ValueError("MODEL_OUTPUT_PATH is not set")
+    ckpt_dir = Path(ckpt_path)
+    if not ckpt_dir.exists():
+        raise FileNotFoundError(f"MODEL_OUTPUT_PATH does not exist: {ckpt_dir}")
+    if not ckpt_dir.is_dir():
+        raise NotADirectoryError(f"MODEL_OUTPUT_PATH must be a directory: {ckpt_dir}")
+    for item in sorted(ckpt_dir.iterdir()):
+        if item.suffix == ".pt":
+            return str(item)
+    raise FileNotFoundError("No .pt file found in MODEL_OUTPUT_PATH")
 
 
 def get_args():
@@ -148,7 +134,7 @@ def process_cold_start_feat(feat):
     return processed_feat
 
 
-def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model, data_root: Path, result_root: Path):
+def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model, data_root=None, result_root=None):
     """
     生产候选库item的id和embedding
 
@@ -162,11 +148,11 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
         retrieve_id2creative_id: 索引id->creative_id的dict
     """
     EMB_SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
+    data_root = Path(data_root) if data_root is not None else Path(os.environ.get('EVAL_DATA_PATH'))
+    result_root = Path(result_root) if result_root is not None else Path(os.environ.get('EVAL_RESULT_PATH'))
     candidate_path = data_root / 'predict_set.jsonl'
     if not candidate_path.exists():
-        raise FileNotFoundError(
-            f"predict_set.jsonl was not found under {data_root}. Export the Tencent candidate file before running inference."
-        )
+        raise FileNotFoundError(f"predict_set.jsonl not found under {data_root}")
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
@@ -197,6 +183,7 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
             retrieve_id2creative_id[retrieval_id] = creative_id
 
     # 保存候选库的embedding和sid
+    result_root.mkdir(parents=True, exist_ok=True)
     model.save_item_emb(item_ids, retrieval_ids, features, str(result_root))
     with open(result_root / "retrive_id2creative_id.json", "w") as f:
         json.dump(retrieve_id2creative_id, f)
@@ -205,9 +192,14 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
 
 def infer():
     args = get_args()
-    data_path = get_required_env_path("EVAL_DATA_PATH", expect_dir=True, description="Evaluation dataset")
-    if (data_path / "predict_seq.jsonl").exists():
-        validate_tencent_eval_dir(data_path)
+    data_path = os.environ.get('EVAL_DATA_PATH')
+    if not data_path:
+        raise ValueError("EVAL_DATA_PATH is not set")
+    data_path = Path(data_path)
+    if not data_path.exists():
+        raise FileNotFoundError(f"EVAL_DATA_PATH does not exist: {data_path}")
+    if not data_path.is_dir():
+        raise NotADirectoryError(f"EVAL_DATA_PATH must be a directory: {data_path}")
     test_dataset = MyTestDataset(data_path, args)
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, collate_fn=test_dataset.collate_fn
@@ -234,17 +226,20 @@ def infer():
         user_list += user_id
 
     # 生成候选库的embedding 以及 id文件
-    result_root = get_required_env_path(
-        "EVAL_RESULT_PATH", expect_dir=True, create=True, description="Evaluation result output"
-    )
+    result_root = os.environ.get('EVAL_RESULT_PATH')
+    if not result_root:
+        raise ValueError("EVAL_RESULT_PATH is not set")
+    result_root = Path(result_root)
+    result_root.mkdir(parents=True, exist_ok=True)
+
     retrieve_id2creative_id = get_candidate_emb(
         test_dataset.indexer['i'],
         test_dataset.feature_types,
         test_dataset.feature_default_value,
         test_dataset.mm_emb_dict,
         model,
-        data_path,
-        result_root,
+        data_root=data_path,
+        result_root=result_root,
     )
     if not all_embs:
         raise ValueError(

@@ -303,27 +303,24 @@ class MyTestDataset(MyDataset):
         super().__init__(data_dir, args)
 
     def _load_data_and_offsets(self):
-        """Load evaluation sequences, allowing Tencent datasets without predict files."""
+        predict_seq = self.data_dir / "predict_seq.jsonl"
+        predict_offsets = self.data_dir / "predict_seq_offsets.pkl"
+        default_seq = self.data_dir / "seq.jsonl"
+        default_offsets = self.data_dir / "seq_offsets.pkl"
 
-        preferred_seq = self.data_dir / "predict_seq.jsonl"
-        preferred_offsets = self.data_dir / "predict_seq_offsets.pkl"
-        fallback_seq = self.data_dir / "seq.jsonl"
-        fallback_offsets = self.data_dir / "seq_offsets.pkl"
-
-        if preferred_seq.exists() and preferred_offsets.exists():
-            sequence_path = preferred_seq
-            offsets_path = preferred_offsets
-        elif fallback_seq.exists() and fallback_offsets.exists():
-            sequence_path = fallback_seq
-            offsets_path = fallback_offsets
+        if predict_seq.exists() and predict_offsets.exists():
+            self.sequence_source = "predict_seq.jsonl"
+            seq_path, offsets_path = predict_seq, predict_offsets
+        elif default_seq.exists() and default_offsets.exists():
+            self.sequence_source = "seq.jsonl"
+            seq_path, offsets_path = default_seq, default_offsets
         else:
             raise FileNotFoundError(
-                "Evaluation dataset is missing both predict_seq.jsonl/predict_seq_offsets.pkl "
-                "and seq.jsonl/seq_offsets.pkl. Provide at least one processed sequence set."
+                "Neither predict_seq nor seq files were found in the evaluation dataset directory."
             )
 
-        self.sequence_source = sequence_path.name
-        self.data_file = open(sequence_path, 'rb')
+        self.data_file = open(seq_path, 'rb')
+        self._offsets_path = offsets_path
         with open(offsets_path, 'rb') as f:
             self.seq_offsets = pickle.load(f)
 
@@ -414,7 +411,10 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        return len(self.seq_offsets)
+        offsets_path = getattr(self, "_offsets_path", self.data_dir / 'predict_seq_offsets.pkl')
+        with open(offsets_path, 'rb') as f:
+            temp = pickle.load(f)
+        return len(temp)
 
     @staticmethod
     def collate_fn(batch):
