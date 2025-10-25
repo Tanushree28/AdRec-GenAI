@@ -816,9 +816,41 @@ class MyTestDataset(MyDataset):
 
     def _load_data_and_offsets(self):
         if self.dataset_type == "tencent":
-            self.data_file = open(self.data_dir / "predict_seq.jsonl", "rb")
-            with open(Path(self.data_dir, "predict_seq_offsets.pkl"), "rb") as f:
+            predict_seq_path = self.data_dir / "predict_seq.jsonl"
+            predict_offsets_path = self.data_dir / "predict_seq_offsets.pkl"
+            seq_path = self.data_dir / "seq.jsonl"
+            seq_offsets_path = self.data_dir / "seq_offsets.pkl"
+
+            if predict_seq_path.exists() and predict_offsets_path.exists():
+                source_path = predict_seq_path
+                offsets_path = predict_offsets_path
+                sequence_source = "predict_seq.jsonl"
+            elif seq_path.exists() and seq_offsets_path.exists():
+                print(
+                    "[dataset] predict_seq.jsonl not found; falling back to seq.jsonl for inference"
+                )
+                source_path = seq_path
+                offsets_path = seq_offsets_path
+                sequence_source = "seq.jsonl"
+            else:
+                missing = []
+                if not predict_seq_path.exists():
+                    missing.append(str(predict_seq_path))
+                if not predict_offsets_path.exists():
+                    missing.append(str(predict_offsets_path))
+                if not seq_path.exists():
+                    missing.append(str(seq_path))
+                if not seq_offsets_path.exists():
+                    missing.append(str(seq_offsets_path))
+                raise FileNotFoundError(
+                    "No Tencent sequence files found for inference. Missing: " + ", ".join(missing)
+                )
+
+            self.sequence_source = sequence_source
+            self.data_file = open(source_path, "rb")
+            with open(offsets_path, "rb") as f:
                 self.seq_offsets = pickle.load(f)
+            self._num_users = len(self.seq_offsets)
         else:
             # Reuse KuaiRec loader for inference scenarios
             self._load_kuairec_dataset()
@@ -910,10 +942,8 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        if self.dataset_type == "tencent":
-            with open(Path(self.data_dir, "predict_seq_offsets.pkl"), "rb") as f:
-                temp = pickle.load(f)
-            return len(temp)
+        if hasattr(self, "_num_users"):
+            return self._num_users
         return len(self.seq_offsets)
 
     @staticmethod
@@ -965,16 +995,57 @@ def load_mm_emb(mm_path, feat_ids):
     Returns:
         mm_emb_dict: 多模态特征Embedding字典，key为特征ID，value为特征Embedding字典（key为item ID，value为Embedding）
     """
-    # SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
-    SHAPE_DICT = {"82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
+    # Embedding dimensions for the released Tencent multimodal features. 81 is
+    # stored as a pickled dictionary while the rest are partitioned JSONL
+    # shards.  Some smaller dataset snapshots omit certain features; instead of
+    # crashing with a ``KeyError`` we simply skip the missing IDs.
+    SHAPE_DICT = {
+        "81": 32,
+        "82": 1024,
+        "83": 3584,
+        "84": 4096,
+        "85": 3584,
+        "86": 3584,
+    }
 
     mm_emb_dict = {}
     for feat_id in tqdm(feat_ids, desc="Loading mm_emb"):
-        shape = SHAPE_DICT[feat_id]
+        shape = SHAPE_DICT.get(feat_id)
+        if shape is None:
+            print(
+                f"[mm_emb] feature {feat_id} not recognised; available IDs: {sorted(SHAPE_DICT)}"
+            )
+            continue
+
         emb_dict = {}
-        if feat_id != "81":
+        base_path = Path(mm_path, f"emb_{feat_id}_{shape}")
+        if feat_id == "81":
+            pickle_path = base_path.with_suffix(".pkl")
+            if pickle_path.exists():
+                with open(pickle_path, "rb") as f:
+                    emb_dict = pickle.load(f)
+            elif base_path.exists():
+                try:
+                    for json_file in base_path.glob("part-*"):
+                        with open(json_file, "r", encoding="utf-8") as file:
+                            for line in file:
+                                data_dict_origin = json.loads(line.strip())
+                                insert_emb = data_dict_origin["emb"]
+                                if isinstance(insert_emb, list):
+                                    insert_emb = np.array(insert_emb, dtype=np.float32)
+                                emb_dict[data_dict_origin["anonymous_cid"]] = insert_emb
+                except Exception as e:
+                    print(f"[mm_emb] failed to load feature {feat_id}: {e}")
+            else:
+                print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
+                continue
+        else:
+            if not base_path.exists():
+                print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
+                continue
             try:
-                base_path = Path(mm_path, f"emb_{feat_id}_{shape}")
                 for json_file in base_path.glob("part-*"):
                     with open(json_file, "r", encoding="utf-8") as file:
                         for line in file:
@@ -985,15 +1056,10 @@ def load_mm_emb(mm_path, feat_ids):
                             data_dict = {data_dict_origin["anonymous_cid"]: insert_emb}
                             emb_dict.update(data_dict)
             except Exception as e:
-                print(f"transfer error: {e}")
+                print(f"[mm_emb] failed to load feature {feat_id}: {e}")
 
-        """
-        if feat_id == '81':
-            with open(Path(mm_path, f'emb_{feat_id}_{shape}.pkl'), 'rb') as f:
-                emb_dict = pickle.load(f)
-        """
         mm_emb_dict[feat_id] = emb_dict
-        print(f"Loaded #{feat_id} mm_emb")
+        print(f"Loaded #{feat_id} mm_emb ({len(emb_dict)} entries)")
     return mm_emb_dict
 
 

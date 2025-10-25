@@ -38,6 +38,7 @@ class MyDataset(torch.utils.data.Dataset):
         """
         super().__init__()
         self.data_dir = Path(data_dir)
+        print(f"[dataset] Initializing dataset from {self.data_dir}")
         self._load_data_and_offsets()
         self.maxlen = args.maxlen
         self.mm_emb_ids = args.mm_emb_id
@@ -58,9 +59,13 @@ class MyDataset(torch.utils.data.Dataset):
         """
         加载用户序列数据和每一行的文件偏移量(预处理好的), 用于快速随机访问数据并I/O
         """
-        self.data_file = open(self.data_dir / "seq.jsonl", 'rb')
-        with open(Path(self.data_dir, 'seq_offsets.pkl'), 'rb') as f:
+        seq_path = self.data_dir / "seq.jsonl"
+        offsets_path = Path(self.data_dir, 'seq_offsets.pkl')
+        self.data_file = open(seq_path, 'rb')
+        with open(offsets_path, 'rb') as f:
             self.seq_offsets = pickle.load(f)
+        self._num_users = len(self.seq_offsets)
+        print(f"[dataset] Loaded {self._num_users} user sequences from {seq_path}")
 
     def _load_user_data(self, uid):
         """
@@ -176,7 +181,7 @@ class MyDataset(torch.utils.data.Dataset):
         Returns:
             usernum: 用户数量
         """
-        return len(self.seq_offsets)
+        return getattr(self, "_num_users", len(self.seq_offsets))
 
     def _init_feat_info(self):
         """
@@ -303,9 +308,30 @@ class MyTestDataset(MyDataset):
         super().__init__(data_dir, args)
 
     def _load_data_and_offsets(self):
-        self.data_file = open(self.data_dir / "predict_seq.jsonl", 'rb')
-        with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        predict_seq = self.data_dir / "predict_seq.jsonl"
+        predict_offsets = self.data_dir / "predict_seq_offsets.pkl"
+        default_seq = self.data_dir / "seq.jsonl"
+        default_offsets = self.data_dir / "seq_offsets.pkl"
+
+        if predict_seq.exists() and predict_offsets.exists():
+            self.sequence_source = "predict_seq.jsonl"
+            seq_path, offsets_path = predict_seq, predict_offsets
+        elif default_seq.exists() and default_offsets.exists():
+            self.sequence_source = "seq.jsonl"
+            seq_path, offsets_path = default_seq, default_offsets
+        else:
+            raise FileNotFoundError(
+                "Neither predict_seq nor seq files were found in the evaluation dataset directory."
+            )
+
+        self.data_file = open(seq_path, 'rb')
+        self._offsets_path = offsets_path
+        with open(offsets_path, 'rb') as f:
             self.seq_offsets = pickle.load(f)
+        self._num_users = len(self.seq_offsets)
+        print(
+            f"[dataset] Evaluation sequences loaded from {seq_path.name} ({self._num_users} users detected)"
+        )
 
     def _process_cold_start_feat(self, feat):
         """
@@ -394,9 +420,7 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
-            temp = pickle.load(f)
-        return len(temp)
+        return getattr(self, "_num_users", len(self.seq_offsets))
 
     @staticmethod
     def collate_fn(batch):
@@ -430,7 +454,7 @@ def save_emb(emb, save_path):
     """
     num_points = emb.shape[0]  # 数据点数量
     num_dimensions = emb.shape[1]  # 向量的维度
-    print(f'saving {save_path}')
+    print(f"[infer] Saving embeddings to {save_path}")
     with open(Path(save_path), 'wb') as f:
         f.write(struct.pack('II', num_points, num_dimensions))
         emb.tofile(f)
@@ -450,25 +474,51 @@ def load_mm_emb(mm_path, feat_ids):
     SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
     mm_emb_dict = {}
     for feat_id in tqdm(feat_ids, desc='Loading mm_emb'):
-        shape = SHAPE_DICT[feat_id]
+        shape = SHAPE_DICT.get(feat_id)
+        if shape is None:
+            print(f"[mm_emb] feature {feat_id} not recognised; available IDs: {sorted(SHAPE_DICT)}")
+            continue
+
         emb_dict = {}
-        if feat_id != '81':
+        base_path = Path(mm_path, f'emb_{feat_id}_{shape}')
+        if feat_id == '81':
+            pickle_path = base_path.with_suffix('.pkl')
+            if pickle_path.exists():
+                with open(pickle_path, 'rb') as f:
+                    emb_dict = pickle.load(f)
+            elif base_path.exists():
+                try:
+                    for json_file in base_path.glob('part-*'):
+                        with open(json_file, 'r', encoding='utf-8') as file:
+                            for line in file:
+                                data_dict_origin = json.loads(line.strip())
+                                insert_emb = data_dict_origin['emb']
+                                if isinstance(insert_emb, list):
+                                    insert_emb = np.array(insert_emb, dtype=np.float32)
+                                emb_dict[data_dict_origin['anonymous_cid']] = insert_emb
+                except Exception as e:
+                    print(f"[mm_emb] failed to load feature {feat_id}: {e}")
+            else:
+                print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
+                continue
+        else:
+            if not base_path.exists():
+                print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
+                continue
             try:
-                base_path = Path(mm_path, f'emb_{feat_id}_{shape}')
-                for json_file in base_path.glob('*.json'):
+                for json_file in base_path.glob('part-*'):
                     with open(json_file, 'r', encoding='utf-8') as file:
                         for line in file:
                             data_dict_origin = json.loads(line.strip())
                             insert_emb = data_dict_origin['emb']
                             if isinstance(insert_emb, list):
                                 insert_emb = np.array(insert_emb, dtype=np.float32)
-                            data_dict = {data_dict_origin['anonymous_cid']: insert_emb}
-                            emb_dict.update(data_dict)
+                            emb_dict[data_dict_origin['anonymous_cid']] = insert_emb
             except Exception as e:
-                print(f"transfer error: {e}")
-        if feat_id == '81':
-            with open(Path(mm_path, f'emb_{feat_id}_{shape}.pkl'), 'rb') as f:
-                emb_dict = pickle.load(f)
+                print(f"[mm_emb] failed to load feature {feat_id}: {e}")
+
         mm_emb_dict[feat_id] = emb_dict
-        print(f'Loaded #{feat_id} mm_emb')
+        print(f"Loaded #{feat_id} mm_emb ({len(emb_dict)} entries)")
     return mm_emb_dict
