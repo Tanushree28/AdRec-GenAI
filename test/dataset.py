@@ -303,8 +303,28 @@ class MyTestDataset(MyDataset):
         super().__init__(data_dir, args)
 
     def _load_data_and_offsets(self):
-        self.data_file = open(self.data_dir / "predict_seq.jsonl", 'rb')
-        with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
+        """Load evaluation sequences, allowing Tencent datasets without predict files."""
+
+        preferred_seq = self.data_dir / "predict_seq.jsonl"
+        preferred_offsets = self.data_dir / "predict_seq_offsets.pkl"
+        fallback_seq = self.data_dir / "seq.jsonl"
+        fallback_offsets = self.data_dir / "seq_offsets.pkl"
+
+        if preferred_seq.exists() and preferred_offsets.exists():
+            sequence_path = preferred_seq
+            offsets_path = preferred_offsets
+        elif fallback_seq.exists() and fallback_offsets.exists():
+            sequence_path = fallback_seq
+            offsets_path = fallback_offsets
+        else:
+            raise FileNotFoundError(
+                "Evaluation dataset is missing both predict_seq.jsonl/predict_seq_offsets.pkl "
+                "and seq.jsonl/seq_offsets.pkl. Provide at least one processed sequence set."
+            )
+
+        self.sequence_source = sequence_path.name
+        self.data_file = open(sequence_path, 'rb')
+        with open(offsets_path, 'rb') as f:
             self.seq_offsets = pickle.load(f)
 
     def _process_cold_start_feat(self, feat):
@@ -394,9 +414,7 @@ class MyTestDataset(MyDataset):
         Returns:
             len(self.seq_offsets): 用户数量
         """
-        with open(Path(self.data_dir, 'predict_seq_offsets.pkl'), 'rb') as f:
-            temp = pickle.load(f)
-        return len(temp)
+        return len(self.seq_offsets)
 
     @staticmethod
     def collate_fn(batch):

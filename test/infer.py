@@ -19,13 +19,87 @@ from dataset import MyTestDataset, save_emb
 from model import BaselineModel
 
 
+def get_required_env_path(var_name, expect_dir=False, create=False, description=None):
+    """Resolve a filesystem path from an environment variable.
+
+    Args:
+        var_name: Environment variable to read.
+        expect_dir: Whether the path should exist and be a directory.
+        create: If True and expect_dir is True, create the directory when missing.
+        description: Optional human readable description for error messages.
+
+    Returns:
+        pathlib.Path corresponding to the environment variable.
+    """
+
+    value = os.environ.get(var_name)
+    if not value:
+        human = description or var_name
+        raise ValueError(f"{human} is not set; export {var_name} before running inference.")
+
+    path = Path(value)
+
+    if expect_dir:
+        if path.exists():
+            if not path.is_dir():
+                raise NotADirectoryError(f"{var_name}={path} must be a directory, not a file.")
+        else:
+            if create:
+                path.mkdir(parents=True, exist_ok=True)
+            else:
+                human = description or var_name
+                raise FileNotFoundError(f"{human} directory does not exist: {path}")
+
+    return path
+
+
 def get_ckpt_path():
-    ckpt_path = os.environ.get("MODEL_OUTPUT_PATH")
-    if ckpt_path is None:
-        raise ValueError("MODEL_OUTPUT_PATH is not set")
-    for item in os.listdir(ckpt_path):
+    ckpt_dir = get_required_env_path("MODEL_OUTPUT_PATH", expect_dir=True, description="Checkpoint directory")
+    for item in sorted(os.listdir(ckpt_dir)):
         if item.endswith(".pt"):
-            return os.path.join(ckpt_path, item)
+            return os.path.join(ckpt_dir, item)
+    raise FileNotFoundError(
+        "No .pt files were found inside MODEL_OUTPUT_PATH. Ensure you point to a checkpoint folder containing model.pt."
+    )
+
+
+def validate_tencent_eval_dir(data_dir: Path) -> str:
+    """Ensure the Tencent evaluation directory has the expected artifacts.
+
+    Returns the name of the sequence file that will be used (either
+    ``predict_seq.jsonl`` or ``seq.jsonl``).
+    """
+
+    base_required = ["indexer.pkl", "item_feat_dict.json", "predict_set.jsonl"]
+    missing_base = [filename for filename in base_required if not (data_dir / filename).exists()]
+    if missing_base:
+        raise FileNotFoundError(
+            "Tencent evaluation directory is missing the following files: "
+            + ", ".join(missing_base)
+            + ". Verify that EVAL_DATA_PATH points to the preprocessed dataset root."
+        )
+
+    sequence_pairs = [
+        ("predict_seq.jsonl", "predict_seq_offsets.pkl"),
+        ("seq.jsonl", "seq_offsets.pkl"),
+    ]
+
+    for seq_name, offsets_name in sequence_pairs:
+        seq_path = data_dir / seq_name
+        offsets_path = data_dir / offsets_name
+        if seq_path.exists() and offsets_path.exists():
+            return seq_name
+        if seq_path.exists() ^ offsets_path.exists():
+            missing = offsets_name if seq_path.exists() else seq_name
+            raise FileNotFoundError(
+                f"Found {seq_path if seq_path.exists() else offsets_path} but missing {missing}."
+                " Ensure both files from the same preprocessing step are present."
+            )
+
+    raise FileNotFoundError(
+        "Tencent evaluation directory is missing predict_seq.jsonl/predict_seq_offsets.pkl "
+        "and seq.jsonl/seq_offsets.pkl. Provide at least one processed sequence set."
+    )
 
 
 def get_args():
@@ -94,7 +168,7 @@ def process_cold_start_feat(feat):
     return processed_feat
 
 
-def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model):
+def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, model, data_root: Path, result_root: Path):
     """
     生产候选库item的id和embedding
 
@@ -108,7 +182,12 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
         retrieve_id2creative_id: 索引id->creative_id的dict
     """
     EMB_SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
-    candidate_path = Path(os.environ.get('EVAL_DATA_PATH'), 'predict_set.jsonl')
+    candidate_path = data_root / 'predict_set.jsonl'
+    if not candidate_path.exists():
+        raise FileNotFoundError(
+            f"predict_set.jsonl was not found under {data_root}. Export the Tencent candidate file before running inference."
+        )
+    print(f"[infer] Loading candidate items from {candidate_path}")
     item_ids, creative_ids, retrieval_ids, features = [], [], [], []
     retrieve_id2creative_id = {}
 
@@ -139,15 +218,18 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
             retrieve_id2creative_id[retrieval_id] = creative_id
 
     # 保存候选库的embedding和sid
-    model.save_item_emb(item_ids, retrieval_ids, features, os.environ.get('EVAL_RESULT_PATH'))
-    with open(Path(os.environ.get('EVAL_RESULT_PATH'), "retrive_id2creative_id.json"), "w") as f:
+    print(f"[infer] Saving candidate embeddings to {result_root}")
+    model.save_item_emb(item_ids, retrieval_ids, features, str(result_root))
+    with open(result_root / "retrive_id2creative_id.json", "w") as f:
         json.dump(retrieve_id2creative_id, f)
     return retrieve_id2creative_id
 
 
 def infer():
     args = get_args()
-    data_path = os.environ.get('EVAL_DATA_PATH')
+    data_path = get_required_env_path("EVAL_DATA_PATH", expect_dir=True, description="Evaluation dataset")
+    sequence_file = validate_tencent_eval_dir(data_path)
+    print(f"[infer] Using evaluation dataset at: {data_path} (sequence source: {sequence_file})")
     test_dataset = MyTestDataset(data_path, args)
     test_loader = DataLoader(
         test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, collate_fn=test_dataset.collate_fn
@@ -158,9 +240,13 @@ def infer():
     model.eval()
 
     ckpt_path = get_ckpt_path()
+    print(f"[infer] Loading checkpoint: {ckpt_path}")
     model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
     all_embs = []
     user_list = []
+    print(
+        f"[infer] Generating user embeddings from {test_dataset.sequence_source} for {len(test_loader)} batches..."
+    )
     for step, batch in tqdm(enumerate(test_loader), total=len(test_loader)):
 
         seq, token_type, seq_feat, user_id = batch
@@ -172,38 +258,63 @@ def infer():
         user_list += user_id
 
     # 生成候选库的embedding 以及 id文件
+    result_root = get_required_env_path(
+        "EVAL_RESULT_PATH", expect_dir=True, create=True, description="Evaluation result output"
+    )
+    print(f"[infer] Writing inference artifacts to: {result_root}")
     retrieve_id2creative_id = get_candidate_emb(
         test_dataset.indexer['i'],
         test_dataset.feature_types,
         test_dataset.feature_default_value,
         test_dataset.mm_emb_dict,
         model,
+        data_path,
+        result_root,
     )
+    if not all_embs:
+        raise ValueError(
+            "No user embeddings were generated. Check that predict_seq.jsonl contains evaluation sequences and that "
+            "EVAL_DATA_PATH is set to the evaluation dataset root."
+        )
     all_embs = np.concatenate(all_embs, axis=0)
+    print(f"[infer] Exporting {all_embs.shape[0]} user embeddings to {result_root / 'query.fbin'}")
     # 保存query文件
-    save_emb(all_embs, Path(os.environ.get('EVAL_RESULT_PATH'), 'query.fbin'))
+    save_emb(all_embs, result_root / 'query.fbin')
     # ANN 检索
     ann_cmd = (
         str(Path("/workspace", "faiss-based-ann", "faiss_demo"))
         + " --dataset_vector_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "embedding.fbin"))
+        + str(result_root / "embedding.fbin")
         + " --dataset_id_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "id.u64bin"))
+        + str(result_root / "id.u64bin")
         + " --query_vector_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "query.fbin"))
+        + str(result_root / "query.fbin")
         + " --result_id_file_path="
-        + str(Path(os.environ.get("EVAL_RESULT_PATH"), "id100.u64bin"))
+        + str(result_root / "id100.u64bin")
         + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
     )
-    os.system(ann_cmd)
+    print("[infer] Running ANN retrieval command...")
+    ann_status = os.system(ann_cmd)
+    if ann_status != 0:
+        raise RuntimeError(
+            "ANN retrieval command failed. Ensure the faiss_demo binary is available and executable."
+        )
 
     # 取出top-k
-    top10s_retrieved = read_result_ids(Path(os.environ.get("EVAL_RESULT_PATH"), "id100.u64bin"))
+    ann_output = result_root / "id100.u64bin"
+    if not ann_output.exists():
+        raise FileNotFoundError(
+            f"Expected ANN output {ann_output} was not created. Check the FAISS command output for errors."
+        )
+    print(f"[infer] Reading ANN results from {ann_output}")
+    top10s_retrieved = read_result_ids(ann_output)
     top10s_untrimmed = []
+    print("[infer] Converting retrieval ids to creative ids...")
     for top10 in tqdm(top10s_retrieved):
         for item in top10:
             top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
 
     top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
+    print("[infer] Inference complete.")
 
     return top10s, user_list
