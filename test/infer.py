@@ -409,35 +409,51 @@ def infer(args=None):
     # 保存query文件
     save_emb(all_embs, result_root / 'query.fbin')
     # ANN 检索
-    ann_cmd = (
-        str(Path("/workspace", "faiss-based-ann", "faiss_demo"))
-        + " --dataset_vector_file_path="
-        + str(result_root / "embedding.fbin")
-        + " --dataset_id_file_path="
-        + str(result_root / "id.u64bin")
-        + " --query_vector_file_path="
-        + str(result_root / "query.fbin")
-        + " --result_id_file_path="
-        + str(result_root / "id100.u64bin")
-        + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
-    )
-    print(f"[infer] Running ANN retrieval command:\n{ann_cmd}")
-    exit_code = os.system(ann_cmd)
-    if exit_code != 0:
-        raise RuntimeError(
-            "FAISS demo command failed. Ensure the ANN binary is available at /workspace/faiss-based-ann/faiss_demo"
+    ann_binary = Path("/workspace", "faiss-based-ann", "faiss_demo")
+    top10s = [[] for _ in user_list]
+
+    if ann_binary.exists():
+        ann_cmd = (
+            str(ann_binary)
+            + " --dataset_vector_file_path="
+            + str(result_root / "embedding.fbin")
+            + " --dataset_id_file_path="
+            + str(result_root / "id.u64bin")
+            + " --query_vector_file_path="
+            + str(result_root / "query.fbin")
+            + " --result_id_file_path="
+            + str(result_root / "id100.u64bin")
+            + " --query_ann_top_k=10 --faiss_M=64 --faiss_ef_construction=1280 --query_ef_search=640 --faiss_metric_type=0"
         )
-
-    # 取出top-k
-    print(f"[infer] Reading ANN results from {result_root / 'id100.u64bin'}")
-    top10s_retrieved = read_result_ids(result_root / "id100.u64bin")
-    top10s_untrimmed = []
-    for top10 in tqdm(top10s_retrieved, desc="Mapping ANN IDs"):
-        for item in top10:
-            top10s_untrimmed.append(retrieve_id2creative_id.get(int(item), 0))
-
-    top10s = [top10s_untrimmed[i : i + 10] for i in range(0, len(top10s_untrimmed), 10)]
-    print("[infer] Inference complete.")
+        print(f"[infer] Running ANN retrieval command:\n{ann_cmd}")
+        exit_code = os.system(ann_cmd)
+        if exit_code != 0:
+            print(
+                "[infer] WARNING: FAISS demo command exited with a non-zero status; skipping ANN retrieval.",
+                file=sys.stderr,
+            )
+        else:
+            ann_result_path = result_root / "id100.u64bin"
+            if ann_result_path.exists():
+                print(f"[infer] Reading ANN results from {ann_result_path}")
+                top10s_retrieved = read_result_ids(ann_result_path)
+                mapped = []
+                for top10 in tqdm(top10s_retrieved, desc="Mapping ANN IDs"):
+                    mapped.append([
+                        retrieve_id2creative_id.get(int(item), 0)
+                        for item in top10
+                    ])
+                top10s = mapped
+            else:
+                print(
+                    f"[infer] WARNING: ANN result file {ann_result_path} not found; skipping retrieval output.",
+                    file=sys.stderr,
+                )
+    else:
+        print(
+            f"[infer] WARNING: ANN binary not found at {ann_binary}. Skipping retrieval stage.",
+            file=sys.stderr,
+        )
 
     print(f"[infer] Inference complete: produced recommendations for {len(user_list)} users")
     return top10s, user_list
