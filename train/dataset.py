@@ -1038,10 +1038,12 @@ def load_mm_emb(mm_path, feat_ids):
                     print(f"[mm_emb] failed to load feature {feat_id}: {e}")
             else:
                 print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
                 continue
         else:
             if not base_path.exists():
                 print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
                 continue
             try:
                 for json_file in base_path.glob("part-*"):

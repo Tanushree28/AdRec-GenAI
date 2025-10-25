@@ -474,25 +474,51 @@ def load_mm_emb(mm_path, feat_ids):
     SHAPE_DICT = {"81": 32, "82": 1024, "83": 3584, "84": 4096, "85": 3584, "86": 3584}
     mm_emb_dict = {}
     for feat_id in tqdm(feat_ids, desc='Loading mm_emb'):
-        shape = SHAPE_DICT[feat_id]
+        shape = SHAPE_DICT.get(feat_id)
+        if shape is None:
+            print(f"[mm_emb] feature {feat_id} not recognised; available IDs: {sorted(SHAPE_DICT)}")
+            continue
+
         emb_dict = {}
-        if feat_id != '81':
+        base_path = Path(mm_path, f'emb_{feat_id}_{shape}')
+        if feat_id == '81':
+            pickle_path = base_path.with_suffix('.pkl')
+            if pickle_path.exists():
+                with open(pickle_path, 'rb') as f:
+                    emb_dict = pickle.load(f)
+            elif base_path.exists():
+                try:
+                    for json_file in base_path.glob('part-*'):
+                        with open(json_file, 'r', encoding='utf-8') as file:
+                            for line in file:
+                                data_dict_origin = json.loads(line.strip())
+                                insert_emb = data_dict_origin['emb']
+                                if isinstance(insert_emb, list):
+                                    insert_emb = np.array(insert_emb, dtype=np.float32)
+                                emb_dict[data_dict_origin['anonymous_cid']] = insert_emb
+                except Exception as e:
+                    print(f"[mm_emb] failed to load feature {feat_id}: {e}")
+            else:
+                print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
+                continue
+        else:
+            if not base_path.exists():
+                print(f"[mm_emb] {base_path} missing; skipping feature {feat_id}")
+                mm_emb_dict[feat_id] = {}
+                continue
             try:
-                base_path = Path(mm_path, f'emb_{feat_id}_{shape}')
-                for json_file in base_path.glob('*.json'):
+                for json_file in base_path.glob('part-*'):
                     with open(json_file, 'r', encoding='utf-8') as file:
                         for line in file:
                             data_dict_origin = json.loads(line.strip())
                             insert_emb = data_dict_origin['emb']
                             if isinstance(insert_emb, list):
                                 insert_emb = np.array(insert_emb, dtype=np.float32)
-                            data_dict = {data_dict_origin['anonymous_cid']: insert_emb}
-                            emb_dict.update(data_dict)
+                            emb_dict[data_dict_origin['anonymous_cid']] = insert_emb
             except Exception as e:
-                print(f"transfer error: {e}")
-        if feat_id == '81':
-            with open(Path(mm_path, f'emb_{feat_id}_{shape}.pkl'), 'rb') as f:
-                emb_dict = pickle.load(f)
+                print(f"[mm_emb] failed to load feature {feat_id}: {e}")
+
         mm_emb_dict[feat_id] = emb_dict
-        print(f'Loaded #{feat_id} mm_emb')
+        print(f"Loaded #{feat_id} mm_emb ({len(emb_dict)} entries)")
     return mm_emb_dict

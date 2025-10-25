@@ -96,7 +96,7 @@ def get_args():
     parser.add_argument('--norm_first', action='store_true')
 
     # MMemb Feature ID
-    parser.add_argument('--mm_emb_id', nargs='+', default=['81'], type=str, choices=[str(s) for s in range(81, 87)])
+    parser.add_argument('--mm_emb_id', nargs='+', default=['82'], type=str, choices=[str(s) for s in range(81, 87)])
 
     args = parser.parse_args()
 
@@ -179,8 +179,9 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
             for feat_id in missing_fields:
                 feature[feat_id] = feat_default_value[feat_id]
             for feat_id in feat_types['item_emb']:
-                if creative_id in mm_emb_dict[feat_id]:
-                    feature[feat_id] = mm_emb_dict[feat_id][creative_id]
+                emb_lookup = mm_emb_dict.get(feat_id, {})
+                if creative_id in emb_lookup:
+                    feature[feat_id] = emb_lookup[creative_id]
                 else:
                     feature[feat_id] = np.zeros(EMB_SHAPE_DICT[feat_id], dtype=np.float32)
 
@@ -202,16 +203,44 @@ def get_candidate_emb(indexer, feat_types, feat_default_value, mm_emb_dict, mode
     return retrieve_id2creative_id
 
 
+def _infer_mm_ids_from_state_dict(state_dict):
+    """Extract the multimedia embedding feature IDs present in a checkpoint."""
+
+    mm_ids = []
+    for key in state_dict.keys():
+        if key.startswith("emb_transform."):
+            parts = key.split(".")
+            if len(parts) >= 3:
+                mm_ids.append(parts[1])
+    return sorted(set(mm_ids))
+
+
+def _maybe_override_mm_ids(args, state_dict):
+    ckpt_mm_ids = _infer_mm_ids_from_state_dict(state_dict)
+    if ckpt_mm_ids and sorted(args.mm_emb_id) != ckpt_mm_ids:
+        print(
+            "[infer] WARNING: Checkpoint was trained with mm_emb_id="
+            f"{ckpt_mm_ids}, overriding requested values {args.mm_emb_id}"
+        )
+        args.mm_emb_id = ckpt_mm_ids
+
+
 def infer(args=None):
     args = args or get_args()
     args.device = normalise_device(getattr(args, "device", "cpu"))
+
+    ckpt_path = get_ckpt_path()
+    print(f"[infer] Loading checkpoint: {ckpt_path}")
+    state_dict = torch.load(ckpt_path, map_location="cpu")
+    _maybe_override_mm_ids(args, state_dict)
+
     print("[infer] Parsed arguments:")
     for key in sorted(vars(args)):
         if key == "mm_emb_id":
             continue
         value = getattr(args, key)
         print(f"    {key}: {value}")
-    print(f"    mm_emb_id: {', '.join(args.mm_emb_id)}")
+    print(f"    mm_emb_id: {', '.join(args.mm_emb_id) if args.mm_emb_id else 'none'}")
     data_path = os.environ.get('EVAL_DATA_PATH')
     if not data_path:
         raise ValueError("EVAL_DATA_PATH is not set")
@@ -234,9 +263,13 @@ def infer(args=None):
     model = BaselineModel(usernum, itemnum, feat_statistics, feat_types, args).to(args.device)
     model.eval()
 
-    ckpt_path = get_ckpt_path()
-    print(f"[infer] Loading checkpoint: {ckpt_path}")
-    model.load_state_dict(torch.load(ckpt_path, map_location=torch.device(args.device)))
+    load_result = model.load_state_dict(state_dict, strict=False)
+    missing_keys = getattr(load_result, "missing_keys", [])
+    unexpected_keys = getattr(load_result, "unexpected_keys", [])
+    if missing_keys:
+        print(f"[infer] WARNING: Missing keys when loading checkpoint: {missing_keys}")
+    if unexpected_keys:
+        print(f"[infer] WARNING: Unexpected keys when loading checkpoint: {unexpected_keys}")
     all_embs = []
     user_list = []
     print(f"[infer] Starting query embedding export across {num_batches} batches")
