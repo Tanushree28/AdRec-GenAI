@@ -14,8 +14,21 @@ This project contains a baseline pipeline for generative ad recommendation.  It 
 
 The data loader detects which dataset is available at `TRAIN_DATA_PATH`:
 
-- **Tencent preprocessed data** – provide the folder that contains `seq.jsonl`, `predict_seq.jsonl`, and the accompanying `*_offsets.pkl` files.
+- **Tencent preprocessed data** – provide the folder that contains `seq.jsonl` (always required) and the accompanying `*_offsets.pkl` files.  If `predict_seq.jsonl`/`predict_seq_offsets.pkl` are also present they will be used during inference; otherwise the loader falls back to the training sequences.
 - **KuaiRec** – provide the folder that contains the CSV files (for the light-weight release this is typically `data/small_matrix.csv`, `user_features.csv`, and `item_categories.csv`).  You can download the dataset from [https://kuairec.com/](https://kuairec.com/) and extract it under `data/KuaiRec`.  The loader will look for CSVs in the root you pass as well as in a nested `data/` directory.
+
+  If you prefer not to set environment variables manually, use the helper scripts under `kuairec/`:
+
+  ```bash
+  # Training convenience wrapper
+  python kuairec/train/run.py --dataset-root /path/to/KuaiRec
+
+  # Inference convenience wrapper
+  python kuairec/test/run.py --dataset-root /path/to/KuaiRec \
+    --checkpoint /path/to/train/ckpt_path/global_stepX.valid_loss=Y/model.pt
+  ```
+
+  Both wrappers default to the same hyperparameters as the main scripts and simply forward any extra flags that you provide.
 
 > **Tip:** when using KuaiRec, multi-modal embedding IDs (`--mm_emb_id`) are ignored automatically because the dataset does not ship with those features.
 
@@ -43,7 +56,7 @@ The script automatically creates a validation split (90/10) from the training da
 
 1. Set the environment variables:
    ```bash
-   export MODEL_OUTPUT_PATH=/path/to/a/folder/with/model.pt
+   export MODEL_OUTPUT_PATH=/path/to/a/folder/with/model.pt  # directory *or* the checkpoint file itself
    export EVAL_DATA_PATH=/path/to/eval/dataset/root
    export EVAL_RESULT_PATH=./eval_results
    mkdir -p "$EVAL_RESULT_PATH"
@@ -54,6 +67,26 @@ The script automatically creates a validation split (90/10) from the training da
    ```
 
 `test/infer.py` loads the same dataset format as training, exports user embeddings to `query.fbin`, and (when the FAISS demo binaries are available under `/workspace/faiss-based-ann`) performs approximate nearest-neighbour retrieval.  The script writes its outputs to `EVAL_RESULT_PATH`.
+
+### Inspecting the inference artifacts
+
+Every run leaves a small bundle of files in `EVAL_RESULT_PATH`:
+
+| File | Contents |
+| ---- | -------- |
+| `query.fbin` | Float32 matrix whose rows are the exported user embeddings. |
+| `embedding.fbin` | Float32 matrix with one row per candidate item embedding. |
+| `id.u64bin` | Unsigned 64-bit integer array that pairs with `embedding.fbin` (one retrieval ID per row). |
+| `id100.u64bin` *(optional)* | ANN retrieval output, containing the top-k retrieval IDs per user. Present only when the FAISS binary runs successfully. |
+| `retrive_id2creative_id.json` | Mapping from retrieval IDs back to the original creative IDs. |
+
+To preview these files without writing custom parsers, run:
+
+```bash
+python tools/dump_eval_results.py ./eval_results --sample-users 3 --write-json preview.json
+```
+
+The helper prints the matrix shapes, shows the first few recommendation lists (falling back to retrieval IDs if the ANN stage was skipped), and optionally stores the preview in JSON for downstream inspection.
 
 ## 5. Optional: quantising multi-modal embeddings
 
