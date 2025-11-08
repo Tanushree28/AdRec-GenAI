@@ -12,7 +12,7 @@ from typing import Sequence
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "kuairec" / "data"
 DEFAULT_RESULT_DIR = PROJECT_ROOT / "kuairec" / "eval_results"
-INFER_ENTRYPOINT = PROJECT_ROOT / "test" / "infer.py"
+INFER_ENTRYPOINT = Path(__file__).resolve().with_name("main.py")
 
 
 def _path(value: str) -> Path:
