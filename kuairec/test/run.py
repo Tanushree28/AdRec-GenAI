@@ -12,7 +12,7 @@ from typing import Sequence
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "kuairec" / "data"
 DEFAULT_RESULT_DIR = PROJECT_ROOT / "kuairec" / "eval_results"
-INFER_ENTRYPOINT = PROJECT_ROOT / "test" / "infer.py"
+INFER_ENTRYPOINT = "kuairec.test.main"
 
 
 def _path(value: str) -> Path:
@@ -33,7 +33,8 @@ def _resolve_checkpoint(path: Path) -> Path:
 def build_command(args: argparse.Namespace, extra: Sequence[str]) -> Sequence[str]:
     cmd = [
         args.python,
-        str(INFER_ENTRYPOINT),
+        "-m",
+        INFER_ENTRYPOINT,
         "--batch_size",
         str(args.batch_size),
         "--lr",

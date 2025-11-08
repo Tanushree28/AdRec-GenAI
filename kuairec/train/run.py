@@ -14,7 +14,7 @@ DEFAULT_DATA_ROOT = PROJECT_ROOT / "kuairec" / "data"
 DEFAULT_LOG_DIR = PROJECT_ROOT / "logs" / "kuairec"
 DEFAULT_EVENTS_DIR = PROJECT_ROOT / "events" / "kuairec"
 DEFAULT_CKPT_DIR = PROJECT_ROOT / "kuairec" / "ckpt"
-TRAIN_ENTRYPOINT = PROJECT_ROOT / "train" / "main.py"
+TRAIN_ENTRYPOINT = "kuairec.train.main"
 
 
 def _path(value: str) -> Path:
@@ -24,7 +24,8 @@ def _path(value: str) -> Path:
 def build_command(args: argparse.Namespace, extra: Sequence[str]) -> Sequence[str]:
     cmd = [
         args.python,
-        str(TRAIN_ENTRYPOINT),
+        "-m",
+        TRAIN_ENTRYPOINT,
         "--batch_size",
         str(args.batch_size),
         "--lr",
