@@ -14,7 +14,7 @@ DEFAULT_DATA_ROOT = PROJECT_ROOT / "kuairec" / "data"
 DEFAULT_LOG_DIR = PROJECT_ROOT / "logs" / "kuairec"
 DEFAULT_EVENTS_DIR = PROJECT_ROOT / "events" / "kuairec"
 DEFAULT_CKPT_DIR = PROJECT_ROOT / "kuairec" / "ckpt"
-TRAIN_ENTRYPOINT = PROJECT_ROOT / "train" / "main.py"
+TRAIN_ENTRYPOINT = Path(__file__).resolve().with_name("main.py")
 
 
 def _path(value: str) -> Path:
