@@ -1,9 +1,5 @@
-"""Convenience wrapper for running inference on the KuaiRec dataset."""
-
-from __future__ import annotations
-
 import argparse
-import os
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -23,42 +19,44 @@ def _resolve_checkpoint(path: Path) -> Path:
     if path.is_file():
         return path
     if path.is_dir():
-        for candidate in sorted(path.iterdir()):
-            if candidate.suffix == ".pt":
-                return candidate
-        raise FileNotFoundError(f"No .pt file found inside {path}")
+        candidates = sorted(path.glob("*.pt"))
+        if not candidates:
+            raise FileNotFoundError(f"No .pt file found inside {path}")
+        return candidates[-1]
     raise FileNotFoundError(f"Checkpoint path does not exist: {path}")
 
 
-def build_command(args: argparse.Namespace, extra: Sequence[str]) -> Sequence[str]:
+def build_command(args: argparse.Namespace, checkpoint: Path, extra: Sequence[str]) -> Sequence[str]:
     cmd = [
         args.python,
         "-m",
         INFER_ENTRYPOINT,
-        "--batch_size",
-        str(args.batch_size),
-        "--lr",
-        str(args.lr),
-        "--maxlen",
-        str(args.maxlen),
-        "--hidden_units",
-        str(args.hidden_units),
-        "--num_blocks",
-        str(args.num_blocks),
-        "--num_epochs",
-        str(args.num_epochs),
-        "--num_heads",
-        str(args.num_heads),
-        "--dropout_rate",
-        str(args.dropout_rate),
-        "--l2_emb",
-        str(args.l2_emb),
+        "--dataset-root",
+        str(args.dataset_root),
+        "--checkpoint",
+        str(checkpoint),
+        "--result-dir",
+        str(args.result_dir),
         "--device",
         args.device,
+        "--batch-size",
+        str(args.batch_size),
+        "--maxlen",
+        str(args.maxlen),
+        "--hidden-units",
+        str(args.hidden_units),
+        "--num-blocks",
+        str(args.num_blocks),
+        "--num-heads",
+        str(args.num_heads),
+        "--dropout-rate",
+        str(args.dropout_rate),
+        "--topk",
+        str(args.topk),
     ]
 
     if args.norm_first:
-        cmd.append("--norm_first")
+        cmd.append("--norm-first")
 
     cmd.extend(extra)
     return cmd
@@ -66,58 +64,26 @@ def build_command(args: argparse.Namespace, extra: Sequence[str]) -> Sequence[st
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run the baseline inference pipeline with KuaiRec defaults.",
+        description="Run the KuaiRec inference pipeline with package defaults.",
     )
-    parser.add_argument(
-        "--dataset-root",
-        type=_path,
-        default=DEFAULT_DATA_ROOT,
-        help="Folder that contains the KuaiRec CSV files.",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        type=_path,
-        required=True,
-        help="Path to the checkpoint directory or .pt file produced by training.",
-    )
-    parser.add_argument(
-        "--result-dir",
-        type=_path,
-        default=DEFAULT_RESULT_DIR,
-        help="Directory for inference artifacts (defaults to kuairec/eval_results).",
-    )
-    parser.add_argument(
-        "--device",
-        default="cpu",
-        help="Torch device passed to test/infer.py (e.g. cpu or cuda).",
-    )
+    parser.add_argument("--dataset-root", type=_path, default=DEFAULT_DATA_ROOT)
+    parser.add_argument("--checkpoint", type=_path, required=True)
+    parser.add_argument("--result-dir", type=_path, default=DEFAULT_RESULT_DIR)
+    parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--maxlen", type=int, default=101)
     parser.add_argument("--hidden-units", dest="hidden_units", type=int, default=32)
     parser.add_argument("--num-blocks", dest="num_blocks", type=int, default=1)
-    parser.add_argument("--num-epochs", dest="num_epochs", type=int, default=3)
     parser.add_argument("--num-heads", dest="num_heads", type=int, default=1)
     parser.add_argument("--dropout-rate", dest="dropout_rate", type=float, default=0.2)
-    parser.add_argument("--l2-emb", dest="l2_emb", type=float, default=0.0)
-    parser.add_argument(
-        "--norm-first",
-        action="store_true",
-        help="Forward the --norm_first flag to the inference script.",
-    )
-    parser.add_argument(
-        "--python",
-        default=sys.executable,
-        help="Python interpreter used to launch test/infer.py",
-    )
+    parser.add_argument("--topk", type=int, default=10)
+    parser.add_argument("--norm-first", action="store_true")
+    parser.add_argument("--python", default=sys.executable)
     parser.add_argument(
         "extra_args",
         nargs=argparse.REMAINDER,
         default=[],
-        help=(
-            "Additional arguments forwarded to test/infer.py. Add '--' before extra options, "
-            "e.g. '-- --mm_emb_id 82'."
-        ),
+        help="Additional options forwarded to kuairec.test.main (prefix with '--').",
     )
 
     args = parser.parse_args(argv)
@@ -132,23 +98,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     result_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint = _resolve_checkpoint(args.checkpoint)
-
-    env = os.environ.copy()
-    env["MODEL_OUTPUT_PATH"] = str(checkpoint)
-    env["EVAL_DATA_PATH"] = str(dataset_root)
-    env["EVAL_RESULT_PATH"] = str(result_dir)
+    metadata_path = checkpoint.parent / "metadata.json"
+    if metadata_path.exists():
+        with metadata_path.open("r", encoding="utf-8") as meta_file:
+            metadata = json.load(meta_file)
+        saved_args = metadata.get("args", {})
+        for key in ["batch_size", "maxlen", "hidden_units", "num_blocks", "num_heads", "dropout_rate"]:
+            if key in saved_args:
+                setattr(args, key, saved_args[key])
+        if "norm_first" in saved_args:
+            args.norm_first = bool(saved_args["norm_first"])
 
     extra = args.extra_args
     if extra and extra[0] == "--":
         extra = extra[1:]
 
-    cmd = list(build_command(args, extra))
+    cmd = list(build_command(args, checkpoint, extra))
 
     print("[kuairec/test] Launching:")
     print(" ".join(cmd))
     if checkpoint != args.checkpoint:
         print(f"[kuairec/test] Resolved checkpoint: {checkpoint}")
-    subprocess.run(cmd, check=True, env=env)
+    subprocess.run(cmd, check=True)
     return 0
 
 

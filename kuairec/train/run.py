@@ -111,8 +111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "extra_args",
         nargs=argparse.REMAINDER,
         help=(
-            "Additional arguments forwarded to train/main.py. Add '--' before the extra options, "
-            "e.g. '-- --mm_emb_id 82'."
+            "Additional arguments forwarded to train/main.py. Add '--' before any extra options."
         ),
         default=[],
     )
