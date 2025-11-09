@@ -21,6 +21,9 @@ from kuairec.train.dataset import (
 )
 from kuairec.train.model import KuaiRecModel
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CKPT_ROOT = PROJECT_ROOT / "kuairec" / "ckpt"
+
 
 def _env_path(*names: str) -> Path | None:
     for name in names:
@@ -41,6 +44,30 @@ def _resolve_checkpoint(path: Path) -> Path:
     raise FileNotFoundError(f"Checkpoint path does not exist: {path}")
 
 
+def _discover_latest_checkpoint(base: Path = DEFAULT_CKPT_ROOT) -> Path | None:
+    base = base.expanduser().resolve()
+    if not base.exists():
+        return None
+
+    candidates = []
+    try:
+        for path in base.rglob("*.pt"):
+            if path.is_file():
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                candidates.append((mtime, path))
+    except OSError:
+        return None
+
+    if not candidates:
+        return None
+
+    candidates.sort()
+    return candidates[-1][1]
+
+
 def _looks_like_tencent_state(state_dict: Mapping[str, object]) -> bool:
     suspicious_prefixes = (
         "item_emb",
@@ -49,7 +76,11 @@ def _looks_like_tencent_state(state_dict: Mapping[str, object]) -> bool:
         "attention_layers",
         "forward_layers",
     )
-    return any(key.startswith(suspicious_prefixes) for key in state_dict.keys())
+    for key in state_dict.keys():
+        stripped = key.split(".", 1)[1] if key.startswith("module.") else key
+        if stripped.startswith(suspicious_prefixes):
+            return True
+    return False
 
 
 def main() -> int:
@@ -81,11 +112,15 @@ def main() -> int:
     dataset_root = (args.dataset_root or env_dataset_root).expanduser().resolve()
     result_dir = (args.result_dir or env_result_dir).expanduser().resolve()
     checkpoint_value = args.checkpoint or env_checkpoint
+    if checkpoint_value is None:
+        checkpoint_value = _discover_latest_checkpoint()
 
     if checkpoint_value is None:
         parser.error(
-            "--checkpoint is required. Provide it explicitly or set MODEL_OUTPUT_PATH/EVAL_CHECKPOINT_PATH."
+            "Unable to resolve a checkpoint. Pass --checkpoint, set MODEL_OUTPUT_PATH/EVAL_CHECKPOINT_PATH, "
+            "or place KuaiRec checkpoints under kuairec/ckpt."
         )
+
     checkpoint = _resolve_checkpoint(checkpoint_value.expanduser().resolve())
 
     metadata_path = checkpoint.parent / "metadata.json"
@@ -109,7 +144,8 @@ def main() -> int:
     if not is_valid_kuairec_root(dataset_root):
         raise FileNotFoundError(
             "KuaiRec dataset not found or missing small_matrix.csv/big_matrix.csv at "
-            f"{dataset_root}. Provide the correct directory via --dataset-root or EVAL_DATA_PATH."
+            f"{dataset_root}. Provide the correct directory via --dataset-root or EVAL_DATA_PATH. "
+            "On Windows PowerShell use `$env:EVAL_DATA_PATH=...`; in Command Prompt use `set EVAL_DATA_PATH=...`."
         )
 
     data = load_kuairec_data(dataset_root)
