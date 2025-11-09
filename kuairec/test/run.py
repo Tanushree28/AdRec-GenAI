@@ -11,6 +11,13 @@ DEFAULT_DATA_ROOT = PROJECT_ROOT / "kuairec" / "data"
 DEFAULT_RESULT_DIR = PROJECT_ROOT / "kuairec" / "eval_results"
 INFER_ENTRYPOINT = "kuairec.test.main"
 
+try:
+    from kuairec.train.dataset import is_valid_kuairec_root
+except ImportError:  # pragma: no cover - defensive for partial installs
+    def is_valid_kuairec_root(path: str | Path) -> bool:  # type: ignore[override]
+        path = Path(path)
+        return path.exists()
+
 
 def _path(value: str) -> Path:
     return Path(value).expanduser().resolve()
@@ -72,8 +79,8 @@ def build_command(args: argparse.Namespace, checkpoint: Path, extra: Sequence[st
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    env_dataset_root = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH") or DEFAULT_DATA_ROOT
-    env_result_dir = _env_path("EVAL_RESULT_PATH") or DEFAULT_RESULT_DIR
+    env_dataset_root = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH")
+    env_result_dir = _env_path("EVAL_RESULT_PATH")
     env_checkpoint = _env_path(
         "MODEL_OUTPUT_PATH",
         "EVAL_MODEL_PATH",
@@ -84,9 +91,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run the KuaiRec inference pipeline with package defaults.",
     )
-    parser.add_argument("--dataset-root", type=_path, default=env_dataset_root)
-    parser.add_argument("--checkpoint", type=_path, default=env_checkpoint)
-    parser.add_argument("--result-dir", type=_path, default=env_result_dir)
+    parser.add_argument("--dataset-root", type=_path)
+    parser.add_argument("--checkpoint", type=_path)
+    parser.add_argument("--result-dir", type=_path)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
     parser.add_argument("--maxlen", type=int, default=101)
@@ -106,22 +113,22 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if args.checkpoint is None:
+    dataset_root = args.dataset_root or env_dataset_root or DEFAULT_DATA_ROOT
+    result_dir = args.result_dir or env_result_dir or DEFAULT_RESULT_DIR
+    checkpoint_path = args.checkpoint or env_checkpoint
+
+    if checkpoint_path is None:
         parser.error(
             "--checkpoint is required. Provide it explicitly or set MODEL_OUTPUT_PATH/EVAL_CHECKPOINT_PATH."
         )
 
-    dataset_root = args.dataset_root
-    if not dataset_root.exists():
-        raise FileNotFoundError(
-            f"KuaiRec dataset not found at {dataset_root}. Place the CSV files there or pass --dataset-root."
-        )
+    dataset_root = dataset_root.expanduser().resolve()
+    result_dir = result_dir.expanduser().resolve()
+    checkpoint_path = checkpoint_path.expanduser().resolve()
 
-    result_dir = args.result_dir
-    result_dir.mkdir(parents=True, exist_ok=True)
-
-    checkpoint = _resolve_checkpoint(args.checkpoint)
+    checkpoint = _resolve_checkpoint(checkpoint_path)
     metadata_path = checkpoint.parent / "metadata.json"
+    metadata: dict | None = None
     if metadata_path.exists():
         with metadata_path.open("r", encoding="utf-8") as meta_file:
             metadata = json.load(meta_file)
@@ -132,15 +139,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         if "norm_first" in saved_args:
             args.norm_first = bool(saved_args["norm_first"])
 
+        saved_root = metadata.get("dataset_root")
+        if saved_root:
+            saved_root_path = Path(saved_root)
+            if is_valid_kuairec_root(saved_root_path):
+                looks_valid = is_valid_kuairec_root(dataset_root)
+                if not looks_valid or dataset_root == DEFAULT_DATA_ROOT:
+                    dataset_root = saved_root_path
+
+    if not is_valid_kuairec_root(dataset_root):
+        raise FileNotFoundError(
+            "KuaiRec dataset not found or missing small_matrix.csv/big_matrix.csv at "
+            f"{dataset_root}. Set EVAL_DATA_PATH or pass --dataset-root."
+        )
+
+    result_dir.mkdir(parents=True, exist_ok=True)
+
     extra = args.extra_args
     if extra and extra[0] == "--":
         extra = extra[1:]
+
+    args.dataset_root = dataset_root
+    args.result_dir = result_dir
 
     cmd = list(build_command(args, checkpoint, extra))
 
     print("[kuairec/test] Launching:")
     print(" ".join(cmd))
-    if checkpoint != args.checkpoint:
+    if checkpoint != checkpoint_path:
         print(f"[kuairec/test] Resolved checkpoint: {checkpoint}")
     subprocess.run(cmd, check=True)
     return 0

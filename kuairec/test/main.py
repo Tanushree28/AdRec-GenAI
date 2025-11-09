@@ -7,13 +7,18 @@ import json
 import math
 import os
 from pathlib import Path
+from typing import Mapping
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from kuairec.train.dataset import KuaiRecEvalDataset, load_kuairec_data
+from kuairec.train.dataset import (
+    KuaiRecEvalDataset,
+    is_valid_kuairec_root,
+    load_kuairec_data,
+)
 from kuairec.train.model import KuaiRecModel
 
 
@@ -23,32 +28,6 @@ def _env_path(*names: str) -> Path | None:
         if value:
             return Path(value).expanduser().resolve()
     return None
-
-
-def _parse_args() -> argparse.Namespace:
-    env_dataset_root = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH") or Path("kuairec/data")
-    env_result_dir = _env_path("EVAL_RESULT_PATH") or Path("kuairec/eval_results")
-    env_checkpoint = _env_path(
-        "MODEL_OUTPUT_PATH",
-        "EVAL_MODEL_PATH",
-        "EVAL_CHECKPOINT_PATH",
-        "TRAIN_CKPT_PATH",
-    )
-
-    parser = argparse.ArgumentParser(description="Run KuaiRec inference.")
-    parser.add_argument("--dataset-root", type=Path, default=env_dataset_root)
-    parser.add_argument("--checkpoint", type=Path, default=env_checkpoint)
-    parser.add_argument("--result-dir", type=Path, default=env_result_dir)
-    parser.add_argument("--device", type=str, default="cpu")
-    parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
-    parser.add_argument("--maxlen", type=int, default=101)
-    parser.add_argument("--hidden-units", dest="hidden_units", type=int, default=32)
-    parser.add_argument("--num-blocks", dest="num_blocks", type=int, default=1)
-    parser.add_argument("--num-heads", dest="num_heads", type=int, default=1)
-    parser.add_argument("--dropout-rate", dest="dropout_rate", type=float, default=0.2)
-    parser.add_argument("--norm-first", action="store_true")
-    parser.add_argument("--topk", type=int, default=10)
-    return parser.parse_args()
 
 
 def _resolve_checkpoint(path: Path) -> Path:
@@ -62,23 +41,78 @@ def _resolve_checkpoint(path: Path) -> Path:
     raise FileNotFoundError(f"Checkpoint path does not exist: {path}")
 
 
-def main() -> int:
-    args = _parse_args()
+def _looks_like_tencent_state(state_dict: Mapping[str, object]) -> bool:
+    suspicious_prefixes = (
+        "item_emb",
+        "user_emb",
+        "sparse_emb",
+        "attention_layers",
+        "forward_layers",
+    )
+    return any(key.startswith(suspicious_prefixes) for key in state_dict.keys())
 
-    if args.checkpoint is None:
-        raise SystemExit(
-            "Missing checkpoint: pass --checkpoint or set MODEL_OUTPUT_PATH/EVAL_CHECKPOINT_PATH."
+
+def main() -> int:
+    env_dataset_root = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH") or Path("kuairec/data")
+    env_result_dir = _env_path("EVAL_RESULT_PATH") or Path("kuairec/eval_results")
+    env_checkpoint = _env_path(
+        "MODEL_OUTPUT_PATH",
+        "EVAL_MODEL_PATH",
+        "EVAL_CHECKPOINT_PATH",
+        "TRAIN_CKPT_PATH",
+    )
+
+    parser = argparse.ArgumentParser(description="Run KuaiRec inference.")
+    parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--result-dir", type=Path)
+    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
+    parser.add_argument("--maxlen", type=int, default=101)
+    parser.add_argument("--hidden-units", dest="hidden_units", type=int, default=32)
+    parser.add_argument("--num-blocks", dest="num_blocks", type=int, default=1)
+    parser.add_argument("--num-heads", dest="num_heads", type=int, default=1)
+    parser.add_argument("--dropout-rate", dest="dropout_rate", type=float, default=0.2)
+    parser.add_argument("--norm-first", action="store_true")
+    parser.add_argument("--topk", type=int, default=10)
+    args = parser.parse_args()
+
+    user_supplied_root = args.dataset_root is not None
+    dataset_root = (args.dataset_root or env_dataset_root).expanduser().resolve()
+    result_dir = (args.result_dir or env_result_dir).expanduser().resolve()
+    checkpoint_value = args.checkpoint or env_checkpoint
+
+    if checkpoint_value is None:
+        parser.error(
+            "--checkpoint is required. Provide it explicitly or set MODEL_OUTPUT_PATH/EVAL_CHECKPOINT_PATH."
+        )
+    checkpoint = _resolve_checkpoint(checkpoint_value.expanduser().resolve())
+
+    metadata_path = checkpoint.parent / "metadata.json"
+    metadata: dict | None = None
+    if metadata_path.exists():
+        with metadata_path.open("r", encoding="utf-8") as meta_file:
+            metadata = json.load(meta_file)
+        saved_args = metadata.get("args", {})
+        for key in ["batch_size", "maxlen", "hidden_units", "num_blocks", "num_heads", "dropout_rate"]:
+            if key in saved_args:
+                setattr(args, key, saved_args[key])
+        if "norm_first" in saved_args:
+            args.norm_first = bool(saved_args["norm_first"])
+
+        saved_root = metadata.get("dataset_root")
+        if saved_root and not user_supplied_root:
+            saved_root_path = Path(saved_root)
+            if is_valid_kuairec_root(saved_root_path):
+                dataset_root = saved_root_path
+
+    if not is_valid_kuairec_root(dataset_root):
+        raise FileNotFoundError(
+            "KuaiRec dataset not found or missing small_matrix.csv/big_matrix.csv at "
+            f"{dataset_root}. Provide the correct directory via --dataset-root or EVAL_DATA_PATH."
         )
 
-    args.dataset_root = args.dataset_root.expanduser().resolve()
-    args.result_dir = args.result_dir.expanduser().resolve()
-    args.checkpoint = args.checkpoint.expanduser().resolve()
-
-    checkpoint_path = _resolve_checkpoint(args.checkpoint)
-    result_dir = args.result_dir
-    result_dir.mkdir(parents=True, exist_ok=True)
-
-    data = load_kuairec_data(args.dataset_root)
+    data = load_kuairec_data(dataset_root)
     eval_dataset = KuaiRecEvalDataset(data, maxlen=args.maxlen)
     if len(eval_dataset) == 0:
         raise ValueError("Evaluation dataset is empty. Each user must have at least two interactions.")
@@ -91,6 +125,8 @@ def main() -> int:
         collate_fn=KuaiRecEvalDataset.collate_fn,
     )
 
+    result_dir.mkdir(parents=True, exist_ok=True)
+
     device = torch.device(args.device)
     model = KuaiRecModel(
         num_items=data.num_items,
@@ -102,8 +138,16 @@ def main() -> int:
         norm_first=args.norm_first,
     ).to(device)
 
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(state_dict)
+    state_dict = torch.load(checkpoint, map_location=device)
+    try:
+        model.load_state_dict(state_dict)
+    except RuntimeError as exc:  # pragma: no cover - defensive error path
+        if _looks_like_tencent_state(state_dict):
+            raise RuntimeError(
+                "The provided checkpoint appears to come from the Tencent baseline. "
+                "Run kuairec.train.run to produce KuaiRec-specific checkpoints before evaluating."
+            ) from exc
+        raise
     model.eval()
 
     item_embeddings = model.item_embedding.weight.detach().to(device)
@@ -165,7 +209,8 @@ def main() -> int:
         "topk": args.topk,
         "hit_rate@k": hit_rate,
         "ndcg@k": ndcg,
-        "checkpoint": str(checkpoint_path),
+        "checkpoint": str(checkpoint),
+        "dataset_root": str(dataset_root),
     }
     with (result_dir / "metrics.json").open("w", encoding="utf-8") as metrics_file:
         json.dump(metrics, metrics_file, indent=2)

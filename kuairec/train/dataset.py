@@ -45,6 +45,18 @@ def _find_column(columns: Iterable[str], candidates: Sequence[str]) -> str | Non
     return None
 
 
+def is_valid_kuairec_root(path: str | Path) -> bool:
+    """Return True if the directory looks like an extracted KuaiRec dataset."""
+
+    data_path = Path(path)
+    if not data_path.exists():
+        return False
+    for candidate in ("small_matrix.csv", "big_matrix.csv"):
+        if (data_path / candidate).exists():
+            return True
+    return False
+
+
 def load_kuairec_data(data_dir: str | Path) -> KuaiRecData:
     """Load KuaiRec CSVs into reindexed interaction sequences."""
 
@@ -56,8 +68,10 @@ def load_kuairec_data(data_dir: str | Path) -> KuaiRecData:
     if not interaction_path.exists():
         interaction_path = data_path / "big_matrix.csv"
     if not interaction_path.exists():
+        available = ", ".join(sorted(p.name for p in data_path.glob("*.csv"))) or "<none>"
         raise FileNotFoundError(
-            "Could not locate small_matrix.csv or big_matrix.csv in the KuaiRec data folder."
+            "Could not locate small_matrix.csv or big_matrix.csv in the KuaiRec data folder. "
+            f"Found: {available} in {data_path}."
         )
 
     interactions = pd.read_csv(interaction_path)

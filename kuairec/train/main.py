@@ -54,7 +54,7 @@ if __name__ == "__main__":
     args = get_args()
     _init_seed(args.seed)
 
-    data_root = Path(os.environ.get("TRAIN_DATA_PATH", "./kuairec/data"))
+    data_root = Path(os.environ.get("TRAIN_DATA_PATH", "./kuairec/data")).expanduser().resolve()
     data = load_kuairec_data(data_root)
     dataset = KuaiRecTrainDataset(data, maxlen=args.maxlen)
 
@@ -249,6 +249,7 @@ if __name__ == "__main__":
             "args": vars(args),
             "num_users": data.num_users,
             "num_items": data.num_items,
+            "dataset_root": str(data_root),
             "timestamp": time.time(),
         }
         with open(save_dir / "metadata.json", "w", encoding="utf-8") as meta_file:
