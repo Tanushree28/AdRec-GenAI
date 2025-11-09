@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,14 @@ INFER_ENTRYPOINT = "kuairec.test.main"
 
 def _path(value: str) -> Path:
     return Path(value).expanduser().resolve()
+
+
+def _env_path(*names: str) -> Path | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return Path(value).expanduser().resolve()
+    return None
 
 
 def _resolve_checkpoint(path: Path) -> Path:
@@ -63,12 +72,21 @@ def build_command(args: argparse.Namespace, checkpoint: Path, extra: Sequence[st
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    env_dataset_root = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH") or DEFAULT_DATA_ROOT
+    env_result_dir = _env_path("EVAL_RESULT_PATH") or DEFAULT_RESULT_DIR
+    env_checkpoint = _env_path(
+        "MODEL_OUTPUT_PATH",
+        "EVAL_MODEL_PATH",
+        "EVAL_CHECKPOINT_PATH",
+        "TRAIN_CKPT_PATH",
+    )
+
     parser = argparse.ArgumentParser(
         description="Run the KuaiRec inference pipeline with package defaults.",
     )
-    parser.add_argument("--dataset-root", type=_path, default=DEFAULT_DATA_ROOT)
-    parser.add_argument("--checkpoint", type=_path, required=True)
-    parser.add_argument("--result-dir", type=_path, default=DEFAULT_RESULT_DIR)
+    parser.add_argument("--dataset-root", type=_path, default=env_dataset_root)
+    parser.add_argument("--checkpoint", type=_path, default=env_checkpoint)
+    parser.add_argument("--result-dir", type=_path, default=env_result_dir)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
     parser.add_argument("--maxlen", type=int, default=101)
@@ -87,6 +105,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+
+    if args.checkpoint is None:
+        parser.error(
+            "--checkpoint is required. Provide it explicitly or set MODEL_OUTPUT_PATH/EVAL_CHECKPOINT_PATH."
+        )
 
     dataset_root = args.dataset_root
     if not dataset_root.exists():

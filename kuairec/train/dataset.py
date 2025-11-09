@@ -167,10 +167,10 @@ class KuaiRecTrainDataset(Dataset):
 
     @staticmethod
     def collate_fn(batch: Sequence[Mapping[str, object]]) -> Dict[str, torch.Tensor | List[List[int]]]:
-        seq = torch.tensor([sample["seq"] for sample in batch], dtype=torch.long)
-        pos = torch.tensor([sample["pos"] for sample in batch], dtype=torch.long)
-        neg = torch.tensor([sample["neg"] for sample in batch], dtype=torch.long)
-        mask = torch.tensor([sample["mask"] for sample in batch], dtype=torch.float32)
+        seq = torch.as_tensor(np.stack([sample["seq"] for sample in batch], axis=0), dtype=torch.long)
+        pos = torch.as_tensor(np.stack([sample["pos"] for sample in batch], axis=0), dtype=torch.long)
+        neg = torch.as_tensor(np.stack([sample["neg"] for sample in batch], axis=0), dtype=torch.long)
+        mask = torch.as_tensor(np.stack([sample["mask"] for sample in batch], axis=0), dtype=torch.float32)
         user = torch.tensor([sample["user"] for sample in batch], dtype=torch.long)
         history_items = [sample["history_items"] for sample in batch]
         return {
@@ -216,7 +216,7 @@ class KuaiRecEvalDataset(Dataset):
 
     @staticmethod
     def collate_fn(batch: Sequence[Mapping[str, object]]) -> Dict[str, object]:
-        seq = torch.tensor([sample["seq"] for sample in batch], dtype=torch.long)
+        seq = torch.as_tensor(np.stack([sample["seq"] for sample in batch], axis=0), dtype=torch.long)
         target = torch.tensor([sample["target"] for sample in batch], dtype=torch.long)
         length = torch.tensor([sample["length"] for sample in batch], dtype=torch.long)
         user = torch.tensor([sample["user"] for sample in batch], dtype=torch.long)

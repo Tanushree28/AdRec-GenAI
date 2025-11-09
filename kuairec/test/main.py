@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 
 import torch
@@ -16,11 +17,28 @@ from kuairec.train.dataset import KuaiRecEvalDataset, load_kuairec_data
 from kuairec.train.model import KuaiRecModel
 
 
+def _env_path(*names: str) -> Path | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return Path(value).expanduser().resolve()
+    return None
+
+
 def _parse_args() -> argparse.Namespace:
+    env_dataset_root = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH") or Path("kuairec/data")
+    env_result_dir = _env_path("EVAL_RESULT_PATH") or Path("kuairec/eval_results")
+    env_checkpoint = _env_path(
+        "MODEL_OUTPUT_PATH",
+        "EVAL_MODEL_PATH",
+        "EVAL_CHECKPOINT_PATH",
+        "TRAIN_CKPT_PATH",
+    )
+
     parser = argparse.ArgumentParser(description="Run KuaiRec inference.")
-    parser.add_argument("--dataset-root", type=Path, default=Path("kuairec/data"))
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--result-dir", type=Path, default=Path("kuairec/eval_results"))
+    parser.add_argument("--dataset-root", type=Path, default=env_dataset_root)
+    parser.add_argument("--checkpoint", type=Path, default=env_checkpoint)
+    parser.add_argument("--result-dir", type=Path, default=env_result_dir)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
     parser.add_argument("--maxlen", type=int, default=101)
@@ -46,6 +64,15 @@ def _resolve_checkpoint(path: Path) -> Path:
 
 def main() -> int:
     args = _parse_args()
+
+    if args.checkpoint is None:
+        raise SystemExit(
+            "Missing checkpoint: pass --checkpoint or set MODEL_OUTPUT_PATH/EVAL_CHECKPOINT_PATH."
+        )
+
+    args.dataset_root = args.dataset_root.expanduser().resolve()
+    args.result_dir = args.result_dir.expanduser().resolve()
+    args.checkpoint = args.checkpoint.expanduser().resolve()
 
     checkpoint_path = _resolve_checkpoint(args.checkpoint)
     result_dir = args.result_dir
