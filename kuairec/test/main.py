@@ -84,9 +84,20 @@ def _looks_like_tencent_state(state_dict: Mapping[str, object]) -> bool:
 
 
 def main() -> int:
-    env_dataset_root = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH") or Path("kuairec/data")
-    env_result_dir = _env_path("EVAL_RESULT_PATH") or Path("kuairec/eval_results")
+    env_dataset_root = _env_path(
+        "EVAL_REC_DATA_PATH",
+        "TRAIN_REC_DATA_PATH",
+        "EVAL_DATA_PATH",
+        "TRAIN_DATA_PATH",
+    ) or Path("kuairec/data")
+    env_result_dir = _env_path("EVAL_REC_RESULT_PATH", "EVAL_RESULT_PATH") or Path(
+        "kuairec/eval_results"
+    )
     env_checkpoint = _env_path(
+        "MODEL_REC_OUTPUT_PATH",
+        "EVAL_REC_MODEL_PATH",
+        "EVAL_REC_CHECKPOINT_PATH",
+        "TRAIN_REC_CKPT_PATH",
         "MODEL_OUTPUT_PATH",
         "EVAL_MODEL_PATH",
         "EVAL_CHECKPOINT_PATH",
@@ -144,8 +155,8 @@ def main() -> int:
     if not is_valid_kuairec_root(dataset_root):
         raise FileNotFoundError(
             "KuaiRec dataset not found or missing small_matrix.csv/big_matrix.csv at "
-            f"{dataset_root}. Provide the correct directory via --dataset-root or EVAL_DATA_PATH. "
-            "On Windows PowerShell use `$env:EVAL_DATA_PATH=...`; in Command Prompt use `set EVAL_DATA_PATH=...`."
+            f"{dataset_root}. Provide the correct directory via --dataset-root or EVAL_REC_DATA_PATH. "
+            "On Windows PowerShell use `$env:EVAL_REC_DATA_PATH=...`; in Command Prompt use `set EVAL_REC_DATA_PATH=...`."
         )
 
     data = load_kuairec_data(dataset_root)

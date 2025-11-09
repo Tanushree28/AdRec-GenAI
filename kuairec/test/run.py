@@ -106,9 +106,21 @@ def build_command(args: argparse.Namespace, checkpoint: Path, extra: Sequence[st
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    env_dataset_root, env_dataset_name = _env_path("EVAL_DATA_PATH", "TRAIN_DATA_PATH")
-    env_result_dir, env_result_name = _env_path("EVAL_RESULT_PATH")
+    env_dataset_root, env_dataset_name = _env_path(
+        "EVAL_REC_DATA_PATH",
+        "TRAIN_REC_DATA_PATH",
+        "EVAL_DATA_PATH",
+        "TRAIN_DATA_PATH",
+    )
+    env_result_dir, env_result_name = _env_path(
+        "EVAL_REC_RESULT_PATH",
+        "EVAL_RESULT_PATH",
+    )
     env_checkpoint, env_checkpoint_name = _env_path(
+        "MODEL_REC_OUTPUT_PATH",
+        "EVAL_REC_MODEL_PATH",
+        "EVAL_REC_CHECKPOINT_PATH",
+        "TRAIN_REC_CKPT_PATH",
         "MODEL_OUTPUT_PATH",
         "EVAL_MODEL_PATH",
         "EVAL_CHECKPOINT_PATH",
@@ -213,9 +225,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         ]
         if dataset_source:
             message.append(f"(resolved from {dataset_source})")
-        message.append("Set EVAL_DATA_PATH or pass --dataset-root.")
+        message.append("Set EVAL_REC_DATA_PATH (or EVAL_DATA_PATH) or pass --dataset-root.")
         message.append(
-            "On Windows PowerShell use `$env:EVAL_DATA_PATH=...`; in Command Prompt use `set EVAL_DATA_PATH=...`."
+            "On Windows PowerShell use `$env:EVAL_REC_DATA_PATH=...`; in Command Prompt use `set EVAL_REC_DATA_PATH=...`."
         )
         raise FileNotFoundError(" ".join(message))
 

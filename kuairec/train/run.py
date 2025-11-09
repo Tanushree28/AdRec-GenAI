@@ -129,9 +129,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     env = os.environ.copy()
     env["TRAIN_DATA_PATH"] = str(dataset_root)
+    env["TRAIN_REC_DATA_PATH"] = str(dataset_root)
     env["TRAIN_LOG_PATH"] = str(args.log_dir)
     env["TRAIN_TF_EVENTS_PATH"] = str(args.events_dir)
     env["TRAIN_CKPT_PATH"] = str(args.ckpt_dir)
+    env["TRAIN_REC_CKPT_PATH"] = str(args.ckpt_dir)
 
     extra = args.extra_args
     if extra and extra[0] == "--":
