@@ -10,7 +10,11 @@ from torch.utils.data import DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from .dataset import KuaiRecTrainDataset, load_kuairec_data
+from .dataset import (
+    KuaiRecTrainDataset,
+    compute_dataset_statistics,
+    load_kuairec_data,
+)
 from .model import KuaiRecModel
 
 
@@ -56,6 +60,7 @@ if __name__ == "__main__":
 
     data_root = Path(os.environ.get("TRAIN_DATA_PATH", "./kuairec/data")).expanduser().resolve()
     data = load_kuairec_data(data_root)
+    dataset_stats = compute_dataset_statistics(data)
     dataset = KuaiRecTrainDataset(data, maxlen=args.maxlen)
 
     if len(dataset) < 2:
@@ -101,6 +106,8 @@ if __name__ == "__main__":
 
     print("Start training")
     global_step = 0
+    epoch_summaries = []
+
     for epoch in range(1, args.num_epochs + 1):
         model.train()
         if args.inference_only:
@@ -226,6 +233,7 @@ if __name__ == "__main__":
             "valid_hit_rate@10": valid_hr10,
             "time": time.time(),
         }
+        epoch_summaries.append(summary)
         log_file.write(json.dumps(summary) + "\n")
         log_file.flush()
         print(
@@ -250,11 +258,48 @@ if __name__ == "__main__":
             "num_users": data.num_users,
             "num_items": data.num_items,
             "dataset_root": str(data_root),
+            "dataset_statistics": dataset_stats,
             "timestamp": time.time(),
         }
         with open(save_dir / "metadata.json", "w", encoding="utf-8") as meta_file:
             json.dump(metadata, meta_file, indent=2)
 
     print("Done")
+    if epoch_summaries:
+        best_epoch = min(epoch_summaries, key=lambda item: item["valid_loss"])
+        summary_lines = [
+            "KuaiRec Training Summary",
+            f"Dataset directory: {data_root}",
+            (
+                f"Users: {dataset_stats['num_users']} | Items: {dataset_stats['num_items']} | "
+                f"Interactions: {dataset_stats['total_interactions']}"
+            ),
+            "",
+            "Sequence length statistics:",
+            (
+                f"  avg={dataset_stats['avg_sequence_length']:.2f} | "
+                f"median={dataset_stats['median_sequence_length']:.2f} | "
+                f"min={dataset_stats['min_sequence_length']} | "
+                f"max={dataset_stats['max_sequence_length']}"
+            ),
+            "",
+            "Best epoch (by validation loss):",
+            (
+                f"  epoch {best_epoch['epoch']} with valid_loss={best_epoch['valid_loss']:.4f}, "
+                f"hit_rate@10={best_epoch['valid_hit_rate@10']:.4f}, "
+                f"top1_acc={best_epoch['valid_top1_acc']:.4f}"
+            ),
+            "",
+            "Most interacted items:",
+        ]
+        for item in dataset_stats["top_items"][:5]:
+            summary_lines.append(f"  {item['item_id']}: {item['count']} interactions")
+
+        summary_text = "\n".join(summary_lines) + "\n"
+        summary_path = ckpt_dir / "latest_training_summary.txt"
+        with summary_path.open("w", encoding="utf-8") as summary_file:
+            summary_file.write(summary_text)
+        print(summary_text)
+
     writer.close()
     log_file.close()

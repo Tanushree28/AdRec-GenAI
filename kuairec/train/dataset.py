@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from statistics import mean, median
+from collections import Counter
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Sequence
 
@@ -35,6 +37,41 @@ class KuaiRecData:
     @property
     def item_inverse(self) -> Dict[int, str]:
         return {v: k for k, v in self.item_map.items()}
+
+
+def compute_dataset_statistics(data: "KuaiRecData") -> Dict[str, object]:
+    """Return aggregate statistics that make KuaiRec runs easier to interpret."""
+
+    lengths = [len(seq) for seq in data.user_sequences.values()]
+    total_interactions = int(sum(lengths))
+    min_len = int(min(lengths)) if lengths else 0
+    max_len = int(max(lengths)) if lengths else 0
+    avg_len = float(mean(lengths)) if lengths else 0.0
+    median_len = float(median(lengths)) if lengths else 0.0
+
+    item_counts: Counter[int] = Counter()
+    for sequence in data.user_sequences.values():
+        item_counts.update(sequence)
+
+    item_inverse = data.item_inverse
+    top_items = [
+        {
+            "item_id": item_inverse.get(item, str(item)),
+            "count": int(count),
+        }
+        for item, count in item_counts.most_common(20)
+    ]
+
+    return {
+        "num_users": data.num_users,
+        "num_items": data.num_items,
+        "total_interactions": total_interactions,
+        "avg_sequence_length": avg_len,
+        "median_sequence_length": median_len,
+        "min_sequence_length": min_len,
+        "max_sequence_length": max_len,
+        "top_items": top_items,
+    }
 
 
 def _find_column(columns: Iterable[str], candidates: Sequence[str]) -> str | None:
@@ -249,4 +286,5 @@ __all__ = [
     "KuaiRecTrainDataset",
     "KuaiRecEvalDataset",
     "load_kuairec_data",
+    "compute_dataset_statistics",
 ]

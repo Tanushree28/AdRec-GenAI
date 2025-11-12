@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 from typing import Mapping
+from collections import Counter
 
 import torch
 import torch.nn.functional as F
@@ -18,6 +19,7 @@ from kuairec.train.dataset import (
     KuaiRecEvalDataset,
     is_valid_kuairec_root,
     load_kuairec_data,
+    compute_dataset_statistics,
 )
 from kuairec.train.model import KuaiRecModel
 
@@ -160,6 +162,7 @@ def main() -> int:
         )
 
     data = load_kuairec_data(dataset_root)
+    dataset_stats = compute_dataset_statistics(data)
     eval_dataset = KuaiRecEvalDataset(data, maxlen=args.maxlen)
     if len(eval_dataset) == 0:
         raise ValueError("Evaluation dataset is empty. Each user must have at least two interactions.")
@@ -205,6 +208,9 @@ def main() -> int:
     metrics_hits = 0
     metrics_ndcg = 0.0
     total_users = 0
+    hit_ranks: list[float] = []
+    recommended_counter: Counter[str] = Counter()
+    target_counter: Counter[str] = Counter()
     output_path = result_dir / "recommendations.jsonl"
 
     with torch.no_grad(), output_path.open("w", encoding="utf-8") as output_file:
@@ -241,26 +247,85 @@ def main() -> int:
                 if is_hit:
                     rank = match_positions[idx].item()
                     metrics_ndcg += 1.0 / math.log2(rank + 2)
+                    hit_ranks.append(rank + 1)
 
             for user_idx, rec_indices in zip(users, topk_indices.tolist()):
                 user_id = user_inverse.get(int(user_idx), str(user_idx))
                 rec_items = [item_inverse.get(int(item), str(item)) for item in rec_indices]
+                recommended_counter.update(rec_items)
                 record = {"user_id": user_id, "recommendations": rec_items}
                 output_file.write(json.dumps(record) + "\n")
 
+            for tgt in target.tolist():
+                item_name = item_inverse.get(int(tgt), str(tgt))
+                target_counter[item_name] += 1
+
     hit_rate = metrics_hits / total_users if total_users else 0.0
     ndcg = metrics_ndcg / total_users if total_users else 0.0
+    unique_recommended = len(recommended_counter)
+    coverage = (
+        unique_recommended / dataset_stats["num_items"]
+        if dataset_stats["num_items"]
+        else 0.0
+    )
+    avg_hit_rank = sum(hit_ranks) / len(hit_ranks) if hit_ranks else None
 
     metrics = {
         "users_evaluated": total_users,
         "topk": args.topk,
         "hit_rate@k": hit_rate,
         "ndcg@k": ndcg,
+        "hit_users": metrics_hits,
+        "unique_recommended_items": unique_recommended,
+        "catalog_coverage": coverage,
+        "average_hit_rank": avg_hit_rank,
         "checkpoint": str(checkpoint),
         "dataset_root": str(dataset_root),
+        "dataset_statistics": dataset_stats,
+        "most_common_recommendations": recommended_counter.most_common(10),
+        "most_common_targets": target_counter.most_common(10),
     }
     with (result_dir / "metrics.json").open("w", encoding="utf-8") as metrics_file:
         json.dump(metrics, metrics_file, indent=2)
+
+    summary_lines = [
+        "KuaiRec Evaluation Summary",
+        f"Dataset directory: {dataset_root}",
+        (
+            f"Users evaluated: {total_users} | Hits: {metrics_hits} | "
+            f"Top-{args.topk} hit rate: {hit_rate:.4f}"
+        ),
+        f"Top-{args.topk} NDCG: {ndcg:.4f}",
+        (
+            f"Unique items recommended: {unique_recommended} (coverage {coverage:.2%} of catalog)"
+        ),
+    ]
+    if avg_hit_rank is not None:
+        summary_lines.append(f"Average rank when correct item found: {avg_hit_rank:.2f}")
+
+    summary_lines.append("")
+    summary_lines.append("Most recommended items:")
+    for item, count in recommended_counter.most_common(5):
+        summary_lines.append(f"  {item}: recommended {count} times")
+
+    summary_lines.append("")
+    summary_lines.append("Most common ground-truth targets:")
+    for item, count in target_counter.most_common(5):
+        summary_lines.append(f"  {item}: appeared {count} times")
+
+    summary_lines.append("")
+    summary_lines.append(
+        "Sequence length stats (avg/median/min/max): "
+        f"{dataset_stats['avg_sequence_length']:.2f} / "
+        f"{dataset_stats['median_sequence_length']:.2f} / "
+        f"{dataset_stats['min_sequence_length']} / "
+        f"{dataset_stats['max_sequence_length']}"
+    )
+
+    summary_text = "\n".join(summary_lines) + "\n"
+    summary_path = result_dir / "summary.txt"
+    with summary_path.open("w", encoding="utf-8") as summary_file:
+        summary_file.write(summary_text)
 
     print(
         f"Evaluation complete: hit_rate@{args.topk}={hit_rate:.4f}, "
@@ -268,6 +333,7 @@ def main() -> int:
     )
     print(f"Recommendations saved to {output_path}")
     print(f"Metrics saved to {result_dir / 'metrics.json'}")
+    print(f"Summary saved to {summary_path}")
     return 0
 
 
