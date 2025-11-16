@@ -1,0 +1,29 @@
+{
+  "epoch": 2,
+  "global_step": 10,
+  "valid_loss": 11.571435928344727,
+  "train_loss": 12.41370735168457,
+  "train_hit_rate@5": 0.0018632571918609183,
+  "train_hit_rate@10": 0.0024479613315662274,
+  "valid_hit_rate@5": 0.003019450881258339,
+  "valid_hit_rate@10": 0.0036514289726845024,
+  "args": {
+    "batch_size": 256,
+    "lr": 0.001,
+    "maxlen": 101,
+    "hidden_units": 32,
+    "num_blocks": 1,
+    "num_epochs": 3,
+    "num_heads": 1,
+    "dropout_rate": 0.2,
+    "l2_emb": 0.0,
+    "device": "cpu",
+    "inference_only": false,
+    "state_dict_path": null,
+    "norm_first": false,
+    "seed": 42
+  },
+  "num_users": 1411,
+  "num_items": 3327,
+  "timestamp": 1762627609.8760328
+}

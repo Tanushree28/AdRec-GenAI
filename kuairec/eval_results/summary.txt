@@ -1,0 +1,22 @@
+KuaiRec Evaluation Summary
+Dataset directory: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\data
+Users evaluated: 1411 | Hits: 2 | Top-10 hit rate: 0.0014
+Top-10 NDCG: 0.0008
+Unique items recommended: 1299 (coverage 39.04% of catalog)
+Average rank when correct item found: 3.00
+
+Most recommended items:
+  319: recommended 336 times
+  7007: recommended 259 times
+  1312: recommended 196 times
+  6289: recommended 193 times
+  6275: recommended 168 times
+
+Most common ground-truth targets:
+  9806: appeared 66 times
+  9901: appeared 64 times
+  4364: appeared 57 times
+  5381: appeared 51 times
+  8663: appeared 36 times
+
+Sequence length stats (avg/median/min/max): 3314.37 / 3315.00 / 3295 / 3327

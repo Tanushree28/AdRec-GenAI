@@ -1,0 +1,187 @@
+{
+  "users_evaluated": 1411,
+  "topk": 10,
+  "hit_rate@k": 0.001417434443656981,
+  "ndcg@k": 0.0007523786758645291,
+  "hit_users": 2,
+  "unique_recommended_items": 1299,
+  "catalog_coverage": 0.3904418394950406,
+  "average_hit_rank": 3.0,
+  "checkpoint": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\ckpt\\global_step5.valid_loss=11.9938\\model.pt",
+  "dataset_root": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\data",
+  "dataset_statistics": {
+    "num_users": 1411,
+    "num_items": 3327,
+    "total_interactions": 4676570,
+    "avg_sequence_length": 3314.3656980864635,
+    "median_sequence_length": 3315.0,
+    "min_sequence_length": 3295,
+    "max_sequence_length": 3327,
+    "top_items": [
+      {
+        "item_id": "1969",
+        "count": 1411
+      },
+      {
+        "item_id": "1973",
+        "count": 1411
+      },
+      {
+        "item_id": "173",
+        "count": 1411
+      },
+      {
+        "item_id": "9570",
+        "count": 1411
+      },
+      {
+        "item_id": "6788",
+        "count": 1411
+      },
+      {
+        "item_id": "8239",
+        "count": 1411
+      },
+      {
+        "item_id": "171",
+        "count": 1411
+      },
+      {
+        "item_id": "5261",
+        "count": 1411
+      },
+      {
+        "item_id": "6782",
+        "count": 1411
+      },
+      {
+        "item_id": "9605",
+        "count": 1411
+      },
+      {
+        "item_id": "170",
+        "count": 1411
+      },
+      {
+        "item_id": "6778",
+        "count": 1411
+      },
+      {
+        "item_id": "6846",
+        "count": 1411
+      },
+      {
+        "item_id": "2045",
+        "count": 1411
+      },
+      {
+        "item_id": "3653",
+        "count": 1411
+      },
+      {
+        "item_id": "1922",
+        "count": 1411
+      },
+      {
+        "item_id": "8291",
+        "count": 1411
+      },
+      {
+        "item_id": "2052",
+        "count": 1411
+      },
+      {
+        "item_id": "255",
+        "count": 1411
+      },
+      {
+        "item_id": "2046",
+        "count": 1411
+      }
+    ]
+  },
+  "most_common_recommendations": [
+    [
+      "319",
+      336
+    ],
+    [
+      "7007",
+      259
+    ],
+    [
+      "1312",
+      196
+    ],
+    [
+      "6289",
+      193
+    ],
+    [
+      "6275",
+      168
+    ],
+    [
+      "4111",
+      164
+    ],
+    [
+      "2293",
+      139
+    ],
+    [
+      "6013",
+      129
+    ],
+    [
+      "6755",
+      120
+    ],
+    [
+      "791",
+      115
+    ]
+  ],
+  "most_common_targets": [
+    [
+      "9806",
+      66
+    ],
+    [
+      "9901",
+      64
+    ],
+    [
+      "4364",
+      57
+    ],
+    [
+      "5381",
+      51
+    ],
+    [
+      "8663",
+      36
+    ],
+    [
+      "7297",
+      34
+    ],
+    [
+      "3940",
+      29
+    ],
+    [
+      "211",
+      27
+    ],
+    [
+      "7109",
+      27
+    ],
+    [
+      "3737",
+      26
+    ]
+  ]
+}

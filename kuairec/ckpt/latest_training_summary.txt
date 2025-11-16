@@ -1,0 +1,16 @@
+KuaiRec Training Summary
+Dataset directory: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\data
+Users: 1411 | Items: 3327 | Interactions: 4676570
+
+Sequence length statistics:
+  avg=3314.37 | median=3315.00 | min=3295 | max=3327
+
+Best epoch (by validation loss):
+  epoch 3 with valid_loss=11.1715, hit_rate@10=0.0046, top1_acc=0.0033
+
+Most interacted items:
+  1969: 1411 interactions
+  1973: 1411 interactions
+  173: 1411 interactions
+  9570: 1411 interactions
+  6788: 1411 interactions
