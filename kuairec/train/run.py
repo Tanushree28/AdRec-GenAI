@@ -14,7 +14,7 @@ DEFAULT_DATA_ROOT = PROJECT_ROOT / "kuairec" / "data"
 DEFAULT_LOG_DIR = PROJECT_ROOT / "logs" / "kuairec"
 DEFAULT_EVENTS_DIR = PROJECT_ROOT / "events" / "kuairec"
 DEFAULT_CKPT_DIR = PROJECT_ROOT / "kuairec" / "ckpt"
-TRAIN_ENTRYPOINT = PROJECT_ROOT / "train" / "main.py"
+TRAIN_ENTRYPOINT = "kuairec.train.main"
 
 
 def _path(value: str) -> Path:
@@ -24,7 +24,8 @@ def _path(value: str) -> Path:
 def build_command(args: argparse.Namespace, extra: Sequence[str]) -> Sequence[str]:
     cmd = [
         args.python,
-        str(TRAIN_ENTRYPOINT),
+        "-m",
+        TRAIN_ENTRYPOINT,
         "--batch_size",
         str(args.batch_size),
         "--lr",
@@ -45,6 +46,14 @@ def build_command(args: argparse.Namespace, extra: Sequence[str]) -> Sequence[st
         str(args.l2_emb),
         "--device",
         args.device,
+        "--trim_sequences_to",
+        str(args.trim_sequences_to),
+        "--head_downsample_percent",
+        str(args.head_downsample_percent),
+        "--head_downsample_keep_prob",
+        str(args.head_downsample_keep_prob),
+        "--head_downsample_seed",
+        str(args.head_downsample_seed),
     ]
 
     if args.norm_first:
@@ -89,13 +98,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--maxlen", type=int, default=101)
+    parser.add_argument("--maxlen", type=int, default=150)
     parser.add_argument("--hidden-units", dest="hidden_units", type=int, default=32)
     parser.add_argument("--num-blocks", dest="num_blocks", type=int, default=1)
     parser.add_argument("--num-epochs", dest="num_epochs", type=int, default=3)
     parser.add_argument("--num-heads", dest="num_heads", type=int, default=1)
     parser.add_argument("--dropout-rate", dest="dropout_rate", type=float, default=0.2)
     parser.add_argument("--l2-emb", dest="l2_emb", type=float, default=0.0)
+    parser.add_argument("--trim-sequences-to", dest="trim_sequences_to", type=int, default=150)
+    parser.add_argument(
+        "--head-downsample-percent",
+        dest="head_downsample_percent",
+        type=float,
+        default=0.01,
+    )
+    parser.add_argument(
+        "--head-downsample-keep-prob",
+        dest="head_downsample_keep_prob",
+        type=float,
+        default=0.3,
+    )
+    parser.add_argument(
+        "--head-downsample-seed",
+        dest="head_downsample_seed",
+        type=int,
+        default=42,
+    )
     parser.add_argument(
         "--norm-first",
         action="store_true",
@@ -110,8 +138,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "extra_args",
         nargs=argparse.REMAINDER,
         help=(
-            "Additional arguments forwarded to train/main.py. Add '--' before the extra options, "
-            "e.g. '-- --mm_emb_id 82'."
+            "Additional arguments forwarded to train/main.py. Add '--' before any extra options."
         ),
         default=[],
     )
@@ -129,9 +156,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     env = os.environ.copy()
     env["TRAIN_DATA_PATH"] = str(dataset_root)
+    env["TRAIN_REC_DATA_PATH"] = str(dataset_root)
     env["TRAIN_LOG_PATH"] = str(args.log_dir)
     env["TRAIN_TF_EVENTS_PATH"] = str(args.events_dir)
     env["TRAIN_CKPT_PATH"] = str(args.ckpt_dir)
+    env["TRAIN_REC_CKPT_PATH"] = str(args.ckpt_dir)
 
     extra = args.extra_args
     if extra and extra[0] == "--":
