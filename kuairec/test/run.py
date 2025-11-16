@@ -135,7 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--result-dir", type=_path)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
-    parser.add_argument("--maxlen", type=int, default=101)
+    parser.add_argument("--maxlen", type=int, default=150)
     parser.add_argument("--hidden-units", dest="hidden_units", type=int, default=32)
     parser.add_argument("--num-blocks", dest="num_blocks", type=int, default=1)
     parser.add_argument("--num-heads", dest="num_heads", type=int, default=1)

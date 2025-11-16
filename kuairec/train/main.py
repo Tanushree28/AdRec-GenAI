@@ -3,6 +3,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Dict, List, Mapping, Optional
 
 import numpy as np
 import torch
@@ -13,16 +14,215 @@ from tqdm import tqdm
 from .dataset import (
     KuaiRecTrainDataset,
     compute_dataset_statistics,
+    downsample_head_items,
     load_kuairec_data,
+    trim_user_sequences,
 )
 from .model import KuaiRecModel
+
+
+def _format_percent(value: float) -> str:
+    return f"{value * 100:.2f}%"
+
+
+def _load_eval_metrics() -> Optional[dict]:
+    """Best-effort loading of the latest evaluation metrics JSON if it exists."""
+
+    candidates = [
+        os.environ.get("EVAL_REC_RESULT_PATH"),
+        os.environ.get("EVAL_RESULT_PATH"),
+        os.environ.get("EVAL_RESULTS_PATH"),
+        str(Path("kuairec/eval_results")),
+    ]
+    visited: set[Path] = set()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        base = Path(candidate).expanduser().resolve()
+        potential_files = []
+        if base.is_dir():
+            potential_files.append(base / "metrics.json")
+        else:
+            potential_files.append(base)
+        for metrics_path in potential_files:
+            if metrics_path in visited or not metrics_path.exists():
+                continue
+            visited.add(metrics_path)
+            try:
+                with metrics_path.open("r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+                return data
+            except Exception:
+                continue
+    return None
+
+
+def _detect_training_issues(
+    dataset_stats: dict,
+    best_epoch: dict,
+    epoch_summaries: List[dict],
+    eval_metrics: Optional[dict],
+    args: argparse.Namespace,
+) -> Dict[str, bool]:
+    issues: Dict[str, bool] = {}
+    coverage = None
+    ndcg = None
+    if eval_metrics:
+        coverage = eval_metrics.get("catalog_coverage")
+        ndcg = eval_metrics.get("ndcg@k") or eval_metrics.get("ndcg")
+
+    first_loss = epoch_summaries[0]["valid_loss"] if epoch_summaries else best_epoch["valid_loss"]
+    best_loss = best_epoch["valid_loss"]
+    last_epoch = epoch_summaries[-1] if epoch_summaries else best_epoch
+    improvement = (first_loss - best_loss) / max(first_loss, 1e-8)
+    hit_rate = best_epoch.get("valid_hit_rate@10", 0.0)
+    pop_bias = dataset_stats.get("popularity_bias_score", 0.0)
+    long_tail_ratio = dataset_stats.get("long_tail_ratio", 0.0)
+    avg_len = dataset_stats.get("avg_sequence_length", 0.0)
+    recent_ratio = (
+        dataset_stats.get("personalization_metrics", {}).get("recent_30d_interaction_ratio")
+    )
+
+    issues["popularity_collapse"] = bool(
+        (coverage is not None and coverage < 0.35)
+        or (pop_bias > 0.6 and hit_rate < 0.02)
+    )
+    issues["underfitting"] = bool(improvement < 0.05 or best_loss > 5 or hit_rate < 0.02)
+    issues["overfitting"] = bool(
+        len(epoch_summaries) >= 2
+        and last_epoch["valid_loss"] > best_loss * 1.05
+        and last_epoch.get("train_hit_rate@10", 0.0)
+        > last_epoch.get("valid_hit_rate@10", 0.0) * 1.5
+    )
+    issues["insufficient_negative_sampling"] = bool(hit_rate < 0.02 and long_tail_ratio > 0.3)
+    issues["too_long_sequences"] = bool(avg_len > args.maxlen * 1.5)
+    issues["poor_diversity"] = bool(
+        (coverage is not None and coverage < 0.4) or pop_bias > 0.65
+    )
+    issues["low_personalization"] = bool(
+        dataset_stats.get("personalization_metrics", {})
+        .get("unique_items_last_100", {})
+        .get("avg", 0.0)
+        < max(10, 0.3 * min(100, args.maxlen))
+    )
+    issues["stale_behavior"] = bool(recent_ratio is not None and recent_ratio < 0.2)
+    issues["weak_ndcg"] = bool(ndcg is not None and ndcg < 0.01)
+    return issues
+
+
+def _generate_actionable_steps(
+    issues: Mapping[str, bool],
+    dataset_stats: dict,
+    args: argparse.Namespace,
+) -> List[str]:
+    steps: List[str] = []
+    if issues.get("too_long_sequences"):
+        steps.append("Reduce max_seq_len to 150 and only keep the last 150 interactions per user (--maxlen 150).")
+    if issues.get("popularity_collapse") or issues.get("poor_diversity"):
+        steps.append(
+            "Downsample the top 1% most popular items or apply popularity-aware reweighting to break popularity collapse."
+        )
+    if issues.get("insufficient_negative_sampling"):
+        steps.append("Increase negative samples to 50–200 per step to sharpen InfoNCE discrimination.")
+    if issues.get("underfitting"):
+        steps.append("Train for 20–40 epochs and increase hidden_units to 128–256 for more capacity.")
+    if issues.get("overfitting"):
+        steps.append("Enable time-decay weighting or higher dropout to keep validation loss aligned with training loss.")
+    if issues.get("low_personalization"):
+        steps.append("Add user embeddings or switch to DuoRec for stronger personalization signals.")
+    if issues.get("stale_behavior"):
+        steps.append("Enable time-decay weighting so recent (<30d) events dominate the loss.")
+    if dataset_stats.get("popularity_bias_score", 0.0) > 0.5:
+        steps.append("Apply a popularity prior (e.g., log-frequency penalty) or diversity re-ranking after scoring.")
+    if not steps:
+        steps.append("Fine-tune learning rate and rerun for longer to push hit@10 higher.")
+    return steps
+
+
+def _compute_training_health(
+    dataset_stats: dict,
+    epoch_summaries: List[dict],
+    best_epoch: dict,
+    eval_metrics: Optional[dict],
+    args: argparse.Namespace,
+) -> dict:
+    coverage = None
+    ndcg_value = None
+    if eval_metrics:
+        coverage = eval_metrics.get("catalog_coverage")
+        ndcg_value = eval_metrics.get("ndcg@k") or eval_metrics.get("ndcg")
+
+    first_loss = epoch_summaries[0]["valid_loss"] if epoch_summaries else best_epoch["valid_loss"]
+    best_loss = best_epoch["valid_loss"]
+    improvement = max(0.0, first_loss - best_loss)
+    loss_score = min(1.0, improvement / max(first_loss, 1e-8))
+    hit_rate = best_epoch.get("valid_hit_rate@10", 0.0)
+    hit_score = min(1.0, hit_rate / 0.2)
+    ndcg_score = None
+    if ndcg_value is not None:
+        ndcg_score = min(1.0, ndcg_value / 0.2)
+
+    pop_bias = dataset_stats.get("popularity_bias_score", 0.0)
+    diversity_value = coverage if coverage is not None else (1.0 - pop_bias)
+    diversity_score = min(1.0, max(0.0, diversity_value))
+
+    unique_avg = (
+        dataset_stats.get("personalization_metrics", {})
+        .get("unique_items_last_100", {})
+        .get("avg", 0.0)
+    )
+    denom = max(1.0, min(100.0, dataset_stats.get("avg_sequence_length", 1.0)))
+    personalization_score = min(1.0, unique_avg / denom)
+    if coverage is not None:
+        personalization_score = min(1.0, 0.5 * personalization_score + 0.5 * coverage)
+
+    long_tail_ratio = dataset_stats.get("long_tail_ratio", 0.0)
+    long_tail_score = min(1.0, max(0.0, long_tail_ratio))
+    popularity_component = min(1.0, max(0.0, 1.0 - pop_bias))
+
+    components: Dict[str, Dict[str, float | None]] = {
+        "loss_curve": {"value": improvement, "score": loss_score},
+        "hit_rate": {"value": hit_rate, "score": hit_score},
+        "ndcg": {"value": ndcg_value, "score": ndcg_score},
+        "diversity": {"value": diversity_value, "score": diversity_score},
+        "personalization": {"value": unique_avg, "score": personalization_score},
+        "popularity_bias": {"value": pop_bias, "score": popularity_component},
+        "long_tail_strength": {"value": long_tail_ratio, "score": long_tail_score},
+    }
+
+    score_values = [item["score"] for item in components.values() if item["score"] is not None]
+    overall = sum(score_values) / len(score_values) * 100 if score_values else 0.0
+
+    if overall >= 85:
+        label = "Excellent"
+    elif overall >= 70:
+        label = "Good"
+    elif overall >= 50:
+        label = "Needs Work"
+    elif overall >= 30:
+        label = "Poor"
+    else:
+        label = "Critical"
+
+    issues = _detect_training_issues(dataset_stats, best_epoch, epoch_summaries, eval_metrics, args)
+    steps = _generate_actionable_steps(issues, dataset_stats, args)
+
+    return {
+        "score": overall,
+        "label": label,
+        "components": components,
+        "issues": issues,
+        "actionable_next_steps": steps,
+        "best_epoch": best_epoch,
+        "eval_metrics": eval_metrics,
+    }
 
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the KuaiRec baseline model.")
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--maxlen", type=int, default=101)
+    parser.add_argument("--maxlen", type=int, default=150)
     parser.add_argument("--hidden_units", type=int, default=32)
     parser.add_argument("--num_blocks", type=int, default=1)
     parser.add_argument("--num_epochs", type=int, default=3)
@@ -34,6 +234,30 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--state_dict_path", type=str, default=None)
     parser.add_argument("--norm_first", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--trim_sequences_to",
+        type=int,
+        default=150,
+        help="Trim each user history to this many most recent interactions before training.",
+    )
+    parser.add_argument(
+        "--head_downsample_percent",
+        type=float,
+        default=0.01,
+        help="Top percentage of items considered 'head' for downsampling.",
+    )
+    parser.add_argument(
+        "--head_downsample_keep_prob",
+        type=float,
+        default=0.3,
+        help="Probability of keeping an interaction involving a head item.",
+    )
+    parser.add_argument(
+        "--head_downsample_seed",
+        type=int,
+        default=42,
+        help="Random seed for head-item downsampling.",
+    )
     return parser.parse_args()
 
 
@@ -60,7 +284,31 @@ if __name__ == "__main__":
 
     data_root = Path(os.environ.get("TRAIN_DATA_PATH", "./kuairec/data")).expanduser().resolve()
     data = load_kuairec_data(data_root)
+    transformations: List[Dict[str, object]] = []
+    if args.trim_sequences_to and args.trim_sequences_to > 0:
+        data, trim_meta = trim_user_sequences(data, args.trim_sequences_to)
+        trim_meta["type"] = "sequence_trim"
+        transformations.append(trim_meta)
+
+    if args.head_downsample_keep_prob < 1.0 and args.head_downsample_percent > 0:
+        data, down_meta = downsample_head_items(
+            data,
+            head_percent=args.head_downsample_percent,
+            keep_probability=args.head_downsample_keep_prob,
+            seed=args.head_downsample_seed,
+        )
+        down_meta["type"] = "head_downsampling"
+        transformations.append(down_meta)
+
     dataset_stats = compute_dataset_statistics(data)
+    dataset_diag_payload = dict(dataset_stats)
+    dataset_diag_payload["dataset_root"] = str(data_root)
+    dataset_diag_payload["generated_at"] = time.time()
+    dataset_diag_payload["transformations"] = transformations
+    dataset_diag_path = ckpt_dir / "dataset_diagnostics.json"
+    with dataset_diag_path.open("w", encoding="utf-8") as diag_file:
+        json.dump(dataset_diag_payload, diag_file, indent=2)
+    print(f"Dataset diagnostics saved to {dataset_diag_path}")
     dataset = KuaiRecTrainDataset(data, maxlen=args.maxlen)
 
     if len(dataset) < 2:
@@ -267,6 +515,21 @@ if __name__ == "__main__":
     print("Done")
     if epoch_summaries:
         best_epoch = min(epoch_summaries, key=lambda item: item["valid_loss"])
+        eval_metrics = _load_eval_metrics()
+        health_info = _compute_training_health(
+            dataset_stats, epoch_summaries, best_epoch, eval_metrics, args
+        )
+        health_path = ckpt_dir / "training_health.json"
+        with health_path.open("w", encoding="utf-8") as health_file:
+            json.dump(health_info, health_file, indent=2)
+
+        head_dist = dataset_stats.get("head_item_distribution", {})
+        tail_dist = dataset_stats.get("tail_item_distribution", {})
+        personalization = dataset_stats.get("personalization_metrics", {})
+        unique_stats = personalization.get("unique_items_last_100", {})
+        category_div = personalization.get("category_diversity_last_100")
+        recent_ratio = personalization.get("recent_30d_interaction_ratio")
+
         summary_lines = [
             "KuaiRec Training Summary",
             f"Dataset directory: {data_root}",
@@ -283,17 +546,155 @@ if __name__ == "__main__":
                 f"max={dataset_stats['max_sequence_length']}"
             ),
             "",
-            "Best epoch (by validation loss):",
+            "Head/tail distribution:",
             (
-                f"  epoch {best_epoch['epoch']} with valid_loss={best_epoch['valid_loss']:.4f}, "
-                f"hit_rate@10={best_epoch['valid_hit_rate@10']:.4f}, "
-                f"top1_acc={best_epoch['valid_top1_acc']:.4f}"
+                "  Top 1% share: "
+                f"{head_dist.get('top_1_percent', {}).get('share', 0.0):.2%} "
+                f"({head_dist.get('top_1_percent', {}).get('count', 0)} items), "
+                "Top 5% share: "
+                f"{head_dist.get('top_5_percent', {}).get('share', 0.0):.2%}, "
+                "Top 10% share: "
+                f"{head_dist.get('top_10_percent', {}).get('share', 0.0):.2%}"
+            ),
+            (
+                "  Tail <10/<5/<2 share: "
+                f"{tail_dist.get('<10', {}).get('interaction_share', 0.0):.2%} / "
+                f"{tail_dist.get('<5', {}).get('interaction_share', 0.0):.2%} / "
+                f"{tail_dist.get('<2', {}).get('interaction_share', 0.0):.2%}"
+            ),
+            (
+                "  Long-tail ratio (<10 freq): "
+                f"{dataset_stats.get('long_tail_ratio', 0.0):.2%} | "
+                f"Popularity bias score: {dataset_stats.get('popularity_bias_score', 0.0):.2f}"
             ),
             "",
-            "Most interacted items:",
+            "Personalization snapshot:",
+            (
+                "  Unique items in last 100 (avg/median/min/max): "
+                f"{unique_stats.get('avg', 0.0):.2f} / "
+                f"{unique_stats.get('median', 0.0):.2f} / "
+                f"{unique_stats.get('min', 0)} / "
+                f"{unique_stats.get('max', 0)}"
+            ),
+            (
+                "  Item entropy/Gini: "
+                f"{personalization.get('item_entropy_bits', 0.0):.2f} bits / "
+                f"{personalization.get('item_gini', 0.0):.2f}"
+            ),
         ]
+        summary_lines.append("")
+        summary_lines.append("Data preprocessing steps:")
+        if transformations:
+            for transform in transformations:
+                name = transform.get("type", "unknown")
+                if name == "sequence_trim":
+                    if transform.get("applied"):
+                        summary_lines.append(
+                            (
+                                "  Trimmed sequences to last "
+                                f"{transform.get('max_sequence_length')} interactions "
+                                f"for {transform.get('affected_users', 0)} users ("
+                                f"{transform.get('removed_interactions', 0)} interactions removed)."
+                            )
+                        )
+                    else:
+                        summary_lines.append(
+                            "  Sequence trim requested but not needed (all sequences shorter than limit)."
+                        )
+                elif name == "head_downsampling":
+                    if transform.get("applied"):
+                        summary_lines.append(
+                            (
+                                "  Downsampled top "
+                                f"{transform.get('head_percent', 0.0) * 100:.1f}% items "
+                                f"(keep_prob={transform.get('keep_probability')}) removing "
+                                f"{transform.get('removed_interactions', 0)} interactions across "
+                                f"{transform.get('affected_users', 0)} users."
+                            )
+                        )
+                    else:
+                        summary_lines.append(
+                            "  Head-item downsampling skipped (no qualifying head items or keep_prob>=1)."
+                        )
+                else:
+                    summary_lines.append(f"  {name}: {transform}")
+        else:
+            summary_lines.append("  None (raw sequences used).")
+        if category_div:
+            summary_lines.append(
+                (
+                    "  Category diversity (avg/median): "
+                    f"{category_div.get('avg', 0.0):.2f} / "
+                    f"{category_div.get('median', 0.0):.2f}"
+                )
+            )
+        if recent_ratio is not None:
+            summary_lines.append(
+                f"  Last-30-day interaction ratio: {recent_ratio:.2%}"
+            )
+
+        summary_lines.extend(
+            [
+                "",
+                "Best epoch (by validation loss):",
+                (
+                    f"  epoch {best_epoch['epoch']} with valid_loss={best_epoch['valid_loss']:.4f}, "
+                    f"hit_rate@10={best_epoch['valid_hit_rate@10']:.4f}, "
+                    f"top1_acc={best_epoch['valid_top1_acc']:.4f}"
+                ),
+            ]
+        )
+
+        summary_lines.append("")
+        summary_lines.append("Most interacted items:")
         for item in dataset_stats["top_items"][:5]:
             summary_lines.append(f"  {item['item_id']}: {item['count']} interactions")
+        dominant_items = dataset_stats.get("dominant_items", [])
+        summary_lines.append(
+            "  Dominant items: "
+            + (
+                ", ".join(
+                    f"{entry['item_id']} ({entry['user_coverage']:.0%} users)"
+                    for entry in dominant_items[:5]
+                )
+                if dominant_items
+                else "None detected"
+            )
+        )
+
+        summary_lines.append("")
+        summary_lines.append(
+            f"Training health score: {health_info['score']:.1f}/100 ({health_info['label']})."
+        )
+        issue_list = [
+            name.replace("_", " ")
+            for name, active in health_info.get("issues", {}).items()
+            if active
+        ]
+        summary_lines.append(
+            "Issues detected: " + (", ".join(issue_list) if issue_list else "None")
+        )
+
+        if eval_metrics:
+            summary_lines.append("")
+            summary_lines.append("Evaluation snapshot (latest metrics.json):")
+            summary_lines.append(
+                (
+                    f"  Hit rate@{eval_metrics.get('topk', 10)}: "
+                    f"{eval_metrics.get('hit_rate@k', 0.0):.4f} | "
+                    f"NDCG: {eval_metrics.get('ndcg@k', eval_metrics.get('ndcg', 0.0)):.4f} | "
+                    f"Coverage: {eval_metrics.get('catalog_coverage', 0.0):.2%}"
+                )
+            )
+
+        summary_lines.append("")
+        summary_lines.append("Actionable next steps:")
+        for step in health_info.get("actionable_next_steps", []):
+            summary_lines.append(f"- {step}")
+
+        summary_lines.append("")
+        summary_lines.append(f"Dataset diagnostics: {dataset_diag_path}")
+        summary_lines.append(f"Training health JSON: {health_path}")
 
         summary_text = "\n".join(summary_lines) + "\n"
         summary_path = ckpt_dir / "latest_training_summary.txt"

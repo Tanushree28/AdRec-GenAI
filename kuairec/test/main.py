@@ -17,14 +17,74 @@ from tqdm import tqdm
 
 from kuairec.train.dataset import (
     KuaiRecEvalDataset,
+    compute_dataset_statistics,
+    entropy_from_counts,
+    gini_from_counts,
     is_valid_kuairec_root,
     load_kuairec_data,
-    compute_dataset_statistics,
 )
 from kuairec.train.model import KuaiRecModel
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CKPT_ROOT = PROJECT_ROOT / "kuairec" / "ckpt"
+
+
+def _format_percent(value: float) -> str:
+    return f"{value * 100:.2f}%"
+
+
+def _diagnose_recommendations(
+    hit_rate: float,
+    ndcg: float,
+    coverage: float,
+    zero_hit_rate: float,
+    rec_entropy: float,
+    rec_gini: float,
+    dataset_stats: dict,
+    unique_recommended_ratio: float,
+    args: argparse.Namespace,
+) -> dict:
+    issues = {}
+    avg_len = dataset_stats.get("avg_sequence_length", 0.0)
+    long_tail_ratio = dataset_stats.get("long_tail_ratio", 0.0)
+    pop_bias = dataset_stats.get("popularity_bias_score", 0.0)
+    recent_ratio = (
+        dataset_stats.get("personalization_metrics", {})
+        .get("recent_30d_interaction_ratio")
+    )
+
+    issues["popularity_collapse"] = bool(
+        coverage < 0.35 or rec_gini > 0.9 or rec_entropy < 5.0
+    )
+    issues["underfitting"] = bool(hit_rate < 0.02 or ndcg < 0.01)
+    issues["poor_diversity"] = bool(coverage < 0.4 or rec_entropy < 6.0)
+    issues["too_long_sequences"] = bool(avg_len > args.maxlen * 1.5)
+    issues["insufficient_negative_sampling"] = bool(hit_rate < 0.02 and long_tail_ratio > 0.3)
+    issues["personalization_gap"] = bool(zero_hit_rate > 0.9 or unique_recommended_ratio < 0.3)
+    issues["stale_behavior"] = bool(recent_ratio is not None and recent_ratio < 0.2)
+    issues["popularity_bias"] = bool(pop_bias > 0.6)
+    return issues
+
+
+def _recommendation_next_steps(issues: Mapping[str, bool]) -> list[str]:
+    steps: list[str] = []
+    if issues.get("too_long_sequences"):
+        steps.append("Reduce max_seq_len to 150 to focus on the freshest 150 interactions per user.")
+    if issues.get("insufficient_negative_sampling"):
+        steps.append("Increase negative samples to 50–200 per batch so InfoNCE can distinguish positives.")
+    if issues.get("popularity_collapse") or issues.get("poor_diversity"):
+        steps.append("Downsample the top 1% items and add diversity-promoting re-ranking to avoid repeating the same ads.")
+    if issues.get("personalization_gap"):
+        steps.append("Add user embeddings or switch to DuoRec for personalization and apply user-level regularization.")
+    if issues.get("underfitting"):
+        steps.append("Train for 20–40 epochs with hidden_units=128–256 to raise hit@10 and NDCG.")
+    if issues.get("stale_behavior"):
+        steps.append("Enable time-decay weighting so interactions from the last 30 days dominate training.")
+    if issues.get("popularity_bias"):
+        steps.append("Apply popularity-aware loss or log-frequency penalties before sampling negatives.")
+    if not steps:
+        steps.append("Fine-tune learning rate and refresh checkpoints to push evaluation metrics higher.")
+    return steps
 
 
 def _env_path(*names: str) -> Path | None:
@@ -112,7 +172,7 @@ def main() -> int:
     parser.add_argument("--result-dir", type=Path)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128)
-    parser.add_argument("--maxlen", type=int, default=101)
+    parser.add_argument("--maxlen", type=int, default=150)
     parser.add_argument("--hidden-units", dest="hidden_units", type=int, default=32)
     parser.add_argument("--num-blocks", dest="num_blocks", type=int, default=1)
     parser.add_argument("--num-heads", dest="num_heads", type=int, default=1)
@@ -269,6 +329,10 @@ def main() -> int:
         else 0.0
     )
     avg_hit_rank = sum(hit_ranks) / len(hit_ranks) if hit_ranks else None
+    zero_hit_rate = 1.0 - (metrics_hits / total_users) if total_users else 1.0
+    rec_entropy = entropy_from_counts(recommended_counter.values())
+    rec_gini = gini_from_counts(recommended_counter.values())
+    unique_ratio = coverage
 
     metrics = {
         "users_evaluated": total_users,
@@ -279,6 +343,9 @@ def main() -> int:
         "unique_recommended_items": unique_recommended,
         "catalog_coverage": coverage,
         "average_hit_rank": avg_hit_rank,
+        "zero_hit_rate": zero_hit_rate,
+        "recommendation_entropy_bits": rec_entropy,
+        "recommendation_gini": rec_gini,
         "checkpoint": str(checkpoint),
         "dataset_root": str(dataset_root),
         "dataset_statistics": dataset_stats,
@@ -287,6 +354,36 @@ def main() -> int:
     }
     with (result_dir / "metrics.json").open("w", encoding="utf-8") as metrics_file:
         json.dump(metrics, metrics_file, indent=2)
+
+    recommendation_issues = _diagnose_recommendations(
+        hit_rate,
+        ndcg,
+        coverage,
+        zero_hit_rate,
+        rec_entropy,
+        rec_gini,
+        dataset_stats,
+        unique_ratio,
+        args,
+    )
+    recommendation_actions = _recommendation_next_steps(recommendation_issues)
+    recommendation_diag = {
+        "hit_rate@k": hit_rate,
+        "ndcg@k": ndcg,
+        "catalog_coverage": coverage,
+        "zero_hit_rate": zero_hit_rate,
+        "average_hit_rank": avg_hit_rank,
+        "recommendation_entropy_bits": rec_entropy,
+        "recommendation_gini": rec_gini,
+        "unique_recommended_ratio": unique_ratio,
+        "issues": recommendation_issues,
+        "actionable_next_steps": recommendation_actions,
+        "top_recommendations": recommended_counter.most_common(10),
+        "top_ground_truth": target_counter.most_common(10),
+    }
+    recommendation_diag_path = result_dir / "recommendation_diagnostics.json"
+    with recommendation_diag_path.open("w", encoding="utf-8") as diag_file:
+        json.dump(recommendation_diag, diag_file, indent=2)
 
     summary_lines = [
         "KuaiRec Evaluation Summary",
@@ -299,17 +396,21 @@ def main() -> int:
         (
             f"Unique items recommended: {unique_recommended} (coverage {coverage:.2%} of catalog)"
         ),
+        f"Zero-hit users: {zero_hit_rate:.2%}",
+        (
+            f"Recommendation entropy/Gini: {rec_entropy:.2f} bits / {rec_gini:.2f}"
+        ),
     ]
     if avg_hit_rank is not None:
         summary_lines.append(f"Average rank when correct item found: {avg_hit_rank:.2f}")
 
     summary_lines.append("")
-    summary_lines.append("Most recommended items:")
-    for item, count in recommended_counter.most_common(5):
+    summary_lines.append("Most recommended items (top 10):")
+    for item, count in recommended_counter.most_common(10):
         summary_lines.append(f"  {item}: recommended {count} times")
 
     summary_lines.append("")
-    summary_lines.append("Most common ground-truth targets:")
+    summary_lines.append("Most common ground-truth targets (top 5):")
     for item, count in target_counter.most_common(5):
         summary_lines.append(f"  {item}: appeared {count} times")
 
@@ -322,6 +423,19 @@ def main() -> int:
         f"{dataset_stats['max_sequence_length']}"
     )
 
+    summary_lines.append("")
+    summary_lines.append("Recommendation issues detected: " + (
+        ", ".join(name.replace("_", " ") for name, flag in recommendation_issues.items() if flag) or "None"
+    ))
+
+    summary_lines.append("")
+    summary_lines.append("Actionable next steps:")
+    for step in recommendation_actions:
+        summary_lines.append(f"- {step}")
+
+    summary_lines.append("")
+    summary_lines.append(f"Recommendation diagnostics JSON: {recommendation_diag_path}")
+
     summary_text = "\n".join(summary_lines) + "\n"
     summary_path = result_dir / "summary.txt"
     with summary_path.open("w", encoding="utf-8") as summary_file:
@@ -333,6 +447,7 @@ def main() -> int:
     )
     print(f"Recommendations saved to {output_path}")
     print(f"Metrics saved to {result_dir / 'metrics.json'}")
+    print(f"Recommendation diagnostics saved to {recommendation_diag_path}")
     print(f"Summary saved to {summary_path}")
     return 0
 
