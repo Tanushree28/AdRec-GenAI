@@ -1,0 +1,121 @@
+{
+  "epoch": 3,
+  "global_step": 15,
+  "valid_loss": 11.171488761901855,
+  "train_loss": 12.011042404174805,
+  "train_hit_rate@5": 0.0023232244484290947,
+  "train_hit_rate@10": 0.003118422078428315,
+  "valid_hit_rate@5": 0.0037216487606207427,
+  "valid_hit_rate@10": 0.004634506003791869,
+  "args": {
+    "batch_size": 256,
+    "lr": 0.001,
+    "maxlen": 101,
+    "hidden_units": 32,
+    "num_blocks": 1,
+    "num_epochs": 3,
+    "num_heads": 1,
+    "dropout_rate": 0.2,
+    "l2_emb": 0.0,
+    "device": "cpu",
+    "inference_only": false,
+    "state_dict_path": null,
+    "norm_first": false,
+    "seed": 42
+  },
+  "num_users": 1411,
+  "num_items": 3327,
+  "dataset_root": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\data",
+  "dataset_statistics": {
+    "num_users": 1411,
+    "num_items": 3327,
+    "total_interactions": 4676570,
+    "avg_sequence_length": 3314.3656980864635,
+    "median_sequence_length": 3315.0,
+    "min_sequence_length": 3295,
+    "max_sequence_length": 3327,
+    "top_items": [
+      {
+        "item_id": "1969",
+        "count": 1411
+      },
+      {
+        "item_id": "1973",
+        "count": 1411
+      },
+      {
+        "item_id": "173",
+        "count": 1411
+      },
+      {
+        "item_id": "9570",
+        "count": 1411
+      },
+      {
+        "item_id": "6788",
+        "count": 1411
+      },
+      {
+        "item_id": "8239",
+        "count": 1411
+      },
+      {
+        "item_id": "171",
+        "count": 1411
+      },
+      {
+        "item_id": "5261",
+        "count": 1411
+      },
+      {
+        "item_id": "6782",
+        "count": 1411
+      },
+      {
+        "item_id": "9605",
+        "count": 1411
+      },
+      {
+        "item_id": "170",
+        "count": 1411
+      },
+      {
+        "item_id": "6778",
+        "count": 1411
+      },
+      {
+        "item_id": "6846",
+        "count": 1411
+      },
+      {
+        "item_id": "2045",
+        "count": 1411
+      },
+      {
+        "item_id": "3653",
+        "count": 1411
+      },
+      {
+        "item_id": "1922",
+        "count": 1411
+      },
+      {
+        "item_id": "8291",
+        "count": 1411
+      },
+      {
+        "item_id": "2052",
+        "count": 1411
+      },
+      {
+        "item_id": "255",
+        "count": 1411
+      },
+      {
+        "item_id": "2046",
+        "count": 1411
+      }
+    ]
+  },
+  "timestamp": 1762969564.3105245
+}
