@@ -17,12 +17,11 @@ from tqdm import tqdm
 
 from kuairec.train.dataset import (
     KuaiRecEvalDataset,
-    compute_dataset_statistics,
     entropy_from_counts,
     gini_from_counts,
     is_valid_kuairec_root,
-    load_kuairec_data,
 )
+from kuairec.test.dataset import prepare_eval_data
 from kuairec.train.model import KuaiRecModel
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -179,6 +178,34 @@ def main() -> int:
     parser.add_argument("--dropout-rate", dest="dropout_rate", type=float, default=0.2)
     parser.add_argument("--norm-first", action="store_true")
     parser.add_argument("--topk", type=int, default=10)
+    parser.add_argument(
+        "--trim-sequences-to",
+        dest="trim_sequences_to",
+        type=int,
+        default=None,
+        help="Trim evaluation sequences to this length before scoring (defaults to training metadata or --maxlen).",
+    )
+    parser.add_argument(
+        "--head-downsample-percent",
+        dest="head_downsample_percent",
+        type=float,
+        default=None,
+        help="Percent of head items to downsample to mirror training preprocessing.",
+    )
+    parser.add_argument(
+        "--head-downsample-keep-prob",
+        dest="head_downsample_keep_prob",
+        type=float,
+        default=None,
+        help="Keep probability for interactions involving head items during evaluation preprocessing.",
+    )
+    parser.add_argument(
+        "--head-downsample-seed",
+        dest="head_downsample_seed",
+        type=int,
+        default=None,
+        help="Random seed used when recreating head-item downsampling.",
+    )
     args = parser.parse_args()
 
     user_supplied_root = args.dataset_root is not None
@@ -202,7 +229,18 @@ def main() -> int:
         with metadata_path.open("r", encoding="utf-8") as meta_file:
             metadata = json.load(meta_file)
         saved_args = metadata.get("args", {})
-        for key in ["batch_size", "maxlen", "hidden_units", "num_blocks", "num_heads", "dropout_rate"]:
+        for key in [
+            "batch_size",
+            "maxlen",
+            "hidden_units",
+            "num_blocks",
+            "num_heads",
+            "dropout_rate",
+            "trim_sequences_to",
+            "head_downsample_percent",
+            "head_downsample_keep_prob",
+            "head_downsample_seed",
+        ]:
             if key in saved_args:
                 setattr(args, key, saved_args[key])
         if "norm_first" in saved_args:
@@ -221,8 +259,15 @@ def main() -> int:
             "On Windows PowerShell use `$env:EVAL_REC_DATA_PATH=...`; in Command Prompt use `set EVAL_REC_DATA_PATH=...`."
         )
 
-    data = load_kuairec_data(dataset_root)
-    dataset_stats = compute_dataset_statistics(data)
+    data, dataset_stats, eval_transformations = prepare_eval_data(
+        dataset_root,
+        maxlen=args.maxlen,
+        trim_sequences_to=args.trim_sequences_to,
+        head_downsample_percent=args.head_downsample_percent,
+        head_downsample_keep_prob=args.head_downsample_keep_prob,
+        head_downsample_seed=args.head_downsample_seed,
+        metadata=metadata,
+    )
     eval_dataset = KuaiRecEvalDataset(data, maxlen=args.maxlen)
     if len(eval_dataset) == 0:
         raise ValueError("Evaluation dataset is empty. Each user must have at least two interactions.")
@@ -349,6 +394,7 @@ def main() -> int:
         "checkpoint": str(checkpoint),
         "dataset_root": str(dataset_root),
         "dataset_statistics": dataset_stats,
+        "transformations": eval_transformations,
         "most_common_recommendations": recommended_counter.most_common(10),
         "most_common_targets": target_counter.most_common(10),
     }
@@ -380,6 +426,7 @@ def main() -> int:
         "actionable_next_steps": recommendation_actions,
         "top_recommendations": recommended_counter.most_common(10),
         "top_ground_truth": target_counter.most_common(10),
+        "transformations": eval_transformations,
     }
     recommendation_diag_path = result_dir / "recommendation_diagnostics.json"
     with recommendation_diag_path.open("w", encoding="utf-8") as diag_file:
@@ -403,6 +450,38 @@ def main() -> int:
     ]
     if avg_hit_rank is not None:
         summary_lines.append(f"Average rank when correct item found: {avg_hit_rank:.2f}")
+
+    trim_cap = args.trim_sequences_to or args.maxlen
+    downsample_active = (
+        args.head_downsample_percent is not None
+        and args.head_downsample_percent > 0
+        and args.head_downsample_keep_prob is not None
+        and args.head_downsample_keep_prob < 1.0
+    )
+    if downsample_active:
+        downsample_line = (
+            "head-item downsampling enabled for top "
+            f"{args.head_downsample_percent * 100:.2f}% (keep_prob={args.head_downsample_keep_prob:.2f})."
+        )
+    else:
+        downsample_line = "head-item downsampling disabled."
+    summary_lines.append(
+        f"Evaluation preprocessing: sequences trimmed to last {trim_cap} items; {downsample_line}"
+    )
+
+    if eval_transformations:
+        summary_lines.append("Applied preprocessing details:")
+        for transform in eval_transformations:
+            if transform.get("type") == "sequence_trim":
+                summary_lines.append(
+                    "  - Trimmed "
+                    f"{transform.get('affected_users', 0)} users, removed {transform.get('removed_interactions', 0)} interactions."
+                )
+            elif transform.get("type") == "head_downsampling":
+                summary_lines.append(
+                    "  - Downsampled head items ("
+                    f"keep_prob={transform.get('keep_probability')}, removed {transform.get('removed_interactions', 0)} interactions)."
+                )
 
     summary_lines.append("")
     summary_lines.append("Most recommended items (top 10):")

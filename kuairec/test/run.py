@@ -101,6 +101,17 @@ def build_command(args: argparse.Namespace, checkpoint: Path, extra: Sequence[st
     if args.norm_first:
         cmd.append("--norm-first")
 
+    if args.trim_sequences_to is not None:
+        cmd.extend(["--trim-sequences-to", str(args.trim_sequences_to)])
+    if args.head_downsample_percent is not None:
+        cmd.extend(["--head-downsample-percent", str(args.head_downsample_percent)])
+    if args.head_downsample_keep_prob is not None:
+        cmd.extend(
+            ["--head-downsample-keep-prob", str(args.head_downsample_keep_prob)]
+        )
+    if args.head_downsample_seed is not None:
+        cmd.extend(["--head-downsample-seed", str(args.head_downsample_seed)])
+
     cmd.extend(extra)
     return cmd
 
@@ -142,6 +153,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dropout-rate", dest="dropout_rate", type=float, default=0.2)
     parser.add_argument("--topk", type=int, default=10)
     parser.add_argument("--norm-first", action="store_true")
+    parser.add_argument(
+        "--trim-sequences-to",
+        dest="trim_sequences_to",
+        type=int,
+        default=None,
+        help="Trim evaluation histories to this many recent interactions before scoring.",
+    )
+    parser.add_argument(
+        "--head-downsample-percent",
+        dest="head_downsample_percent",
+        type=float,
+        default=None,
+        help="Percent of head items to downsample when mirroring training preprocessing.",
+    )
+    parser.add_argument(
+        "--head-downsample-keep-prob",
+        dest="head_downsample_keep_prob",
+        type=float,
+        default=None,
+        help="Probability of keeping an interaction with a head item during evaluation preprocessing.",
+    )
+    parser.add_argument(
+        "--head-downsample-seed",
+        dest="head_downsample_seed",
+        type=int,
+        default=None,
+        help="Random seed used when recreating head-item downsampling.",
+    )
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument(
         "extra_args",
@@ -203,7 +242,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             metadata = json.load(meta_file)
         metadata_source = str(metadata_path)
         saved_args = metadata.get("args", {})
-        for key in ["batch_size", "maxlen", "hidden_units", "num_blocks", "num_heads", "dropout_rate"]:
+        for key in [
+            "batch_size",
+            "maxlen",
+            "hidden_units",
+            "num_blocks",
+            "num_heads",
+            "dropout_rate",
+            "trim_sequences_to",
+            "head_downsample_percent",
+            "head_downsample_keep_prob",
+            "head_downsample_seed",
+        ]:
             if key in saved_args:
                 setattr(args, key, saved_args[key])
         if "norm_first" in saved_args:
