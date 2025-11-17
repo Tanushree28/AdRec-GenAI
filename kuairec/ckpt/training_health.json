@@ -1,0 +1,249 @@
+{
+  "score": 28.223846497509307,
+  "label": "Critical",
+  "components": {
+    "loss_curve": {
+      "value": 0.7691679000854492,
+      "score": 0.06088384699258189
+    },
+    "hit_rate": {
+      "value": 0.0003073455588566745,
+      "score": 0.0015367277942833725
+    },
+    "ndcg": {
+      "value": 0.0007523786758645291,
+      "score": 0.0037618933793226454
+    },
+    "diversity": {
+      "value": 0.3904418394950406,
+      "score": 0.3904418394950406
+    },
+    "personalization": {
+      "value": 100.0,
+      "score": 0.6952209197475203
+    },
+    "popularity_bias": {
+      "value": 0.1882369690898829,
+      "score": 0.8117630309101171
+    },
+    "long_tail_strength": {
+      "value": 0.012060996506785581,
+      "score": 0.012060996506785581
+    }
+  },
+  "issues": {
+    "popularity_collapse": false,
+    "underfitting": true,
+    "overfitting": false,
+    "insufficient_negative_sampling": false,
+    "too_long_sequences": false,
+    "poor_diversity": true,
+    "low_personalization": false,
+    "stale_behavior": false,
+    "weak_ndcg": true
+  },
+  "actionable_next_steps": [
+    "Downsample the top 1% most popular items or apply popularity-aware reweighting to break popularity collapse.",
+    "Train for 20\u201340 epochs and increase hidden_units to 128\u2013256 for more capacity."
+  ],
+  "best_epoch": {
+    "epoch": 3,
+    "phase": "epoch_summary",
+    "train_loss": 12.570148277282716,
+    "train_top1_acc": 0.00021054548351485768,
+    "train_hit_rate@5": 0.00017071255420123596,
+    "train_hit_rate@10": 0.0003186634345089738,
+    "valid_loss": 11.864197731018066,
+    "valid_top1_acc": 5.1224259809445757e-05,
+    "valid_hit_rate@5": 5.1224259809445757e-05,
+    "valid_hit_rate@10": 0.0003073455588566745,
+    "time": 1763352761.3532038
+  },
+  "eval_metrics": {
+    "users_evaluated": 1411,
+    "topk": 10,
+    "hit_rate@k": 0.001417434443656981,
+    "ndcg@k": 0.0007523786758645291,
+    "hit_users": 2,
+    "unique_recommended_items": 1299,
+    "catalog_coverage": 0.3904418394950406,
+    "average_hit_rank": 3.0,
+    "checkpoint": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\ckpt\\global_step5.valid_loss=11.9938\\model.pt",
+    "dataset_root": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\data",
+    "dataset_statistics": {
+      "num_users": 1411,
+      "num_items": 3327,
+      "total_interactions": 4676570,
+      "avg_sequence_length": 3314.3656980864635,
+      "median_sequence_length": 3315.0,
+      "min_sequence_length": 3295,
+      "max_sequence_length": 3327,
+      "top_items": [
+        {
+          "item_id": "1969",
+          "count": 1411
+        },
+        {
+          "item_id": "1973",
+          "count": 1411
+        },
+        {
+          "item_id": "173",
+          "count": 1411
+        },
+        {
+          "item_id": "9570",
+          "count": 1411
+        },
+        {
+          "item_id": "6788",
+          "count": 1411
+        },
+        {
+          "item_id": "8239",
+          "count": 1411
+        },
+        {
+          "item_id": "171",
+          "count": 1411
+        },
+        {
+          "item_id": "5261",
+          "count": 1411
+        },
+        {
+          "item_id": "6782",
+          "count": 1411
+        },
+        {
+          "item_id": "9605",
+          "count": 1411
+        },
+        {
+          "item_id": "170",
+          "count": 1411
+        },
+        {
+          "item_id": "6778",
+          "count": 1411
+        },
+        {
+          "item_id": "6846",
+          "count": 1411
+        },
+        {
+          "item_id": "2045",
+          "count": 1411
+        },
+        {
+          "item_id": "3653",
+          "count": 1411
+        },
+        {
+          "item_id": "1922",
+          "count": 1411
+        },
+        {
+          "item_id": "8291",
+          "count": 1411
+        },
+        {
+          "item_id": "2052",
+          "count": 1411
+        },
+        {
+          "item_id": "255",
+          "count": 1411
+        },
+        {
+          "item_id": "2046",
+          "count": 1411
+        }
+      ]
+    },
+    "most_common_recommendations": [
+      [
+        "319",
+        336
+      ],
+      [
+        "7007",
+        259
+      ],
+      [
+        "1312",
+        196
+      ],
+      [
+        "6289",
+        193
+      ],
+      [
+        "6275",
+        168
+      ],
+      [
+        "4111",
+        164
+      ],
+      [
+        "2293",
+        139
+      ],
+      [
+        "6013",
+        129
+      ],
+      [
+        "6755",
+        120
+      ],
+      [
+        "791",
+        115
+      ]
+    ],
+    "most_common_targets": [
+      [
+        "9806",
+        66
+      ],
+      [
+        "9901",
+        64
+      ],
+      [
+        "4364",
+        57
+      ],
+      [
+        "5381",
+        51
+      ],
+      [
+        "8663",
+        36
+      ],
+      [
+        "7297",
+        34
+      ],
+      [
+        "3940",
+        29
+      ],
+      [
+        "211",
+        27
+      ],
+      [
+        "7109",
+        27
+      ],
+      [
+        "3737",
+        26
+      ]
+    ]
+  }
+}
