@@ -1,0 +1,39 @@
+KuaiRec Evaluation Summary
+Dataset directory: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\data
+Users evaluated: 1411 | Hits: 2 | Top-10 hit rate: 0.0014
+Top-10 NDCG: 0.0008
+Unique items recommended: 1299 (coverage 39.04% of catalog)
+Zero-hit users: 99.86%
+Recommendation entropy/Gini: 8.99 bits / 0.68
+Average rank when correct item found: 3.00
+
+Most recommended items (top 10):
+  319: recommended 336 times
+  7007: recommended 259 times
+  1312: recommended 196 times
+  6289: recommended 193 times
+  6275: recommended 168 times
+  4111: recommended 164 times
+  2293: recommended 139 times
+  6013: recommended 129 times
+  6755: recommended 120 times
+  791: recommended 115 times
+
+Most common ground-truth targets (top 5):
+  9806: appeared 66 times
+  9901: appeared 64 times
+  4364: appeared 57 times
+  5381: appeared 51 times
+  8663: appeared 36 times
+
+Sequence length stats (avg/median/min/max): 3314.37 / 3315.00 / 3295 / 3327
+
+Recommendation issues detected: underfitting, poor diversity, too long sequences, personalization gap
+
+Actionable next steps:
+- Reduce max_seq_len to 150 to focus on the freshest 150 interactions per user.
+- Downsample the top 1% items and add diversity-promoting re-ranking to avoid repeating the same ads.
+- Add user embeddings or switch to DuoRec for personalization and apply user-level regularization.
+- Train for 20–40 epochs with hidden_units=128–256 to raise hit@10 and NDCG.
+
+Recommendation diagnostics JSON: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\eval_results\recommendation_diagnostics.json

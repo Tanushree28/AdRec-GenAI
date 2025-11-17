@@ -1,0 +1,110 @@
+{
+  "hit_rate@k": 0.001417434443656981,
+  "ndcg@k": 0.0007523786758645291,
+  "catalog_coverage": 0.3904418394950406,
+  "zero_hit_rate": 0.9985825655563431,
+  "average_hit_rank": 3.0,
+  "recommendation_entropy_bits": 8.99216444325672,
+  "recommendation_gini": 0.6791458729906721,
+  "unique_recommended_ratio": 0.3904418394950406,
+  "issues": {
+    "popularity_collapse": false,
+    "underfitting": true,
+    "poor_diversity": true,
+    "too_long_sequences": true,
+    "insufficient_negative_sampling": false,
+    "personalization_gap": true,
+    "stale_behavior": false,
+    "popularity_bias": false
+  },
+  "actionable_next_steps": [
+    "Reduce max_seq_len to 150 to focus on the freshest 150 interactions per user.",
+    "Downsample the top 1% items and add diversity-promoting re-ranking to avoid repeating the same ads.",
+    "Add user embeddings or switch to DuoRec for personalization and apply user-level regularization.",
+    "Train for 20\u201340 epochs with hidden_units=128\u2013256 to raise hit@10 and NDCG."
+  ],
+  "top_recommendations": [
+    [
+      "319",
+      336
+    ],
+    [
+      "7007",
+      259
+    ],
+    [
+      "1312",
+      196
+    ],
+    [
+      "6289",
+      193
+    ],
+    [
+      "6275",
+      168
+    ],
+    [
+      "4111",
+      164
+    ],
+    [
+      "2293",
+      139
+    ],
+    [
+      "6013",
+      129
+    ],
+    [
+      "6755",
+      120
+    ],
+    [
+      "791",
+      115
+    ]
+  ],
+  "top_ground_truth": [
+    [
+      "9806",
+      66
+    ],
+    [
+      "9901",
+      64
+    ],
+    [
+      "4364",
+      57
+    ],
+    [
+      "5381",
+      51
+    ],
+    [
+      "8663",
+      36
+    ],
+    [
+      "7297",
+      34
+    ],
+    [
+      "3940",
+      29
+    ],
+    [
+      "211",
+      27
+    ],
+    [
+      "7109",
+      27
+    ],
+    [
+      "3737",
+      26
+    ]
+  ]
+}
