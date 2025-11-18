@@ -1,68 +1,67 @@
 {
-  "hit_rate@k": 0.001417434443656981,
-  "ndcg@k": 0.0007523786758645291,
-  "catalog_coverage": 0.3904418394950406,
-  "zero_hit_rate": 0.9985825655563431,
-  "average_hit_rank": 3.0,
-  "recommendation_entropy_bits": 8.99216444325672,
-  "recommendation_gini": 0.6791458729906721,
-  "unique_recommended_ratio": 0.3904418394950406,
+  "hit_rate@k": 0.004961020552799433,
+  "ndcg@k": 0.0027998041158055265,
+  "catalog_coverage": 0.21160204388337842,
+  "zero_hit_rate": 0.9950389794472005,
+  "average_hit_rank": 4.0,
+  "recommendation_entropy_bits": 7.657772895682869,
+  "recommendation_gini": 0.7537930465176212,
+  "unique_recommended_ratio": 0.21160204388337842,
   "issues": {
-    "popularity_collapse": false,
+    "popularity_collapse": true,
     "underfitting": true,
     "poor_diversity": true,
-    "too_long_sequences": true,
+    "too_long_sequences": false,
     "insufficient_negative_sampling": false,
     "personalization_gap": true,
     "stale_behavior": false,
     "popularity_bias": false
   },
   "actionable_next_steps": [
-    "Reduce max_seq_len to 150 to focus on the freshest 150 interactions per user.",
     "Downsample the top 1% items and add diversity-promoting re-ranking to avoid repeating the same ads.",
     "Add user embeddings or switch to DuoRec for personalization and apply user-level regularization.",
     "Train for 20\u201340 epochs with hidden_units=128\u2013256 to raise hit@10 and NDCG."
   ],
   "top_recommendations": [
     [
-      "319",
-      336
+      "6870",
+      668
     ],
     [
-      "7007",
-      259
+      "2321",
+      538
     ],
     [
-      "1312",
-      196
+      "3974",
+      490
     ],
     [
-      "6289",
-      193
+      "9129",
+      434
     ],
     [
-      "6275",
-      168
+      "6946",
+      397
     ],
     [
-      "4111",
-      164
+      "8498",
+      306
     ],
     [
-      "2293",
-      139
+      "3703",
+      290
     ],
     [
-      "6013",
-      129
+      "2259",
+      184
     ],
     [
-      "6755",
-      120
+      "777",
+      171
     ],
     [
-      "791",
-      115
+      "2568",
+      167
     ]
   ],
   "top_ground_truth": [
@@ -106,5 +105,14 @@
       "3737",
       26
     ]
+  ],
+  "transformations": [
+    {
+      "applied": true,
+      "max_sequence_length": 101,
+      "removed_interactions": 4534059,
+      "affected_users": 1411,
+      "type": "sequence_trim"
+    }
   ]
 }

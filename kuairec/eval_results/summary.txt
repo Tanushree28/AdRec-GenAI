@@ -1,23 +1,26 @@
 KuaiRec Evaluation Summary
 Dataset directory: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\data
-Users evaluated: 1411 | Hits: 2 | Top-10 hit rate: 0.0014
-Top-10 NDCG: 0.0008
-Unique items recommended: 1299 (coverage 39.04% of catalog)
-Zero-hit users: 99.86%
-Recommendation entropy/Gini: 8.99 bits / 0.68
-Average rank when correct item found: 3.00
+Users evaluated: 1411 | Hits: 7 | Top-10 hit rate: 0.0050
+Top-10 NDCG: 0.0028
+Unique items recommended: 704 (coverage 21.16% of catalog)
+Zero-hit users: 99.50%
+Recommendation entropy/Gini: 7.66 bits / 0.75
+Average rank when correct item found: 4.00
+Evaluation preprocessing: sequences trimmed to last 101 items; head-item downsampling disabled.
+Applied preprocessing details:
+  - Trimmed 1411 users, removed 4534059 interactions.
 
 Most recommended items (top 10):
-  319: recommended 336 times
-  7007: recommended 259 times
-  1312: recommended 196 times
-  6289: recommended 193 times
-  6275: recommended 168 times
-  4111: recommended 164 times
-  2293: recommended 139 times
-  6013: recommended 129 times
-  6755: recommended 120 times
-  791: recommended 115 times
+  6870: recommended 668 times
+  2321: recommended 538 times
+  3974: recommended 490 times
+  9129: recommended 434 times
+  6946: recommended 397 times
+  8498: recommended 306 times
+  3703: recommended 290 times
+  2259: recommended 184 times
+  777: recommended 171 times
+  2568: recommended 167 times
 
 Most common ground-truth targets (top 5):
   9806: appeared 66 times
@@ -26,12 +29,11 @@ Most common ground-truth targets (top 5):
   5381: appeared 51 times
   8663: appeared 36 times
 
-Sequence length stats (avg/median/min/max): 3314.37 / 3315.00 / 3295 / 3327
+Sequence length stats (avg/median/min/max): 101.00 / 101.00 / 101 / 101
 
-Recommendation issues detected: underfitting, poor diversity, too long sequences, personalization gap
+Recommendation issues detected: popularity collapse, underfitting, poor diversity, personalization gap
 
 Actionable next steps:
-- Reduce max_seq_len to 150 to focus on the freshest 150 interactions per user.
 - Downsample the top 1% items and add diversity-promoting re-ranking to avoid repeating the same ads.
 - Add user embeddings or switch to DuoRec for personalization and apply user-level regularization.
 - Train for 20–40 epochs with hidden_units=128–256 to raise hit@10 and NDCG.
