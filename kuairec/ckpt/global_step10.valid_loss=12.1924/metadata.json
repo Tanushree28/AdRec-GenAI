@@ -2,11 +2,11 @@
   "epoch": 2,
   "global_step": 10,
   "valid_loss": 12.192381858825684,
-  "train_loss": 12.941312217712403,
+  "train_loss": 12.941311264038086,
   "train_hit_rate@5": 0.0001251892064142397,
-  "train_hit_rate@10": 0.00023899757588173034,
-  "valid_hit_rate@5": 0.0,
-  "valid_hit_rate@10": 0.0003073455588566745,
+  "train_hit_rate@10": 0.00022761673893498128,
+  "valid_hit_rate@5": 0.00010244851961889151,
+  "valid_hit_rate@10": 0.00025612129904722876,
   "args": {
     "batch_size": 256,
     "lr": 0.001,
@@ -29,7 +29,7 @@
   },
   "num_users": 1411,
   "num_items": 3327,
-  "dataset_root": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\data",
+  "dataset_root": "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/kuairec/data",
   "dataset_statistics": {
     "num_users": 1411,
     "num_items": 3327,
@@ -176,5 +176,5 @@
       "timespan_days": 6.388888888888888e-08
     }
   },
-  "timestamp": 1763351265.9861565
+  "timestamp": 1765922451.219706
 }

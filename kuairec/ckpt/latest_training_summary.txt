@@ -1,5 +1,5 @@
 KuaiRec Training Summary
-Dataset directory: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\data
+Dataset directory: /Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/kuairec/data
 Users: 1411 | Items: 3327 | Interactions: 196667
 
 Sequence length statistics:
@@ -20,7 +20,7 @@ Data preprocessing steps:
   Last-30-day interaction ratio: 100.00%
 
 Best epoch (by validation loss):
-  epoch 3 with valid_loss=11.8642, hit_rate@10=0.0003, top1_acc=0.0001
+  epoch 3 with valid_loss=11.8642, hit_rate@10=0.0003, top1_acc=0.0002
 
 Most interacted items:
   9284: 450 interactions
@@ -30,15 +30,15 @@ Most interacted items:
   1579: 434 interactions
   Dominant items: None detected
 
-Training health score: 28.2/100 (Critical).
-Issues detected: underfitting, poor diversity, weak ndcg
+Training health score: 24.5/100 (Critical).
+Issues detected: popularity collapse, underfitting, poor diversity, weak ndcg
 
 Evaluation snapshot (latest metrics.json):
-  Hit rate@10: 0.0014 | NDCG: 0.0008 | Coverage: 39.04%
+  Hit rate@10: 0.0050 | NDCG: 0.0028 | Coverage: 21.16%
 
 Actionable next steps:
 - Downsample the top 1% most popular items or apply popularity-aware reweighting to break popularity collapse.
 - Train for 20–40 epochs and increase hidden_units to 128–256 for more capacity.
 
-Dataset diagnostics: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\ckpt\dataset_diagnostics.json
-Training health JSON: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\ckpt\training_health.json
+Dataset diagnostics: ckpt/dataset_diagnostics.json
+Training health JSON: ckpt/training_health.json

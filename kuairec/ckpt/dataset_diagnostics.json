@@ -143,8 +143,8 @@
     "recent_30d_ratio": 1.0,
     "timespan_days": 6.388888888888888e-08
   },
-  "dataset_root": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\data",
-  "generated_at": 1763348192.070306,
+  "dataset_root": "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/kuairec/data",
+  "generated_at": 1765920492.586702,
   "transformations": [
     {
       "applied": true,

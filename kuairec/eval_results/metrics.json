@@ -10,8 +10,8 @@
   "zero_hit_rate": 0.9950389794472005,
   "recommendation_entropy_bits": 7.657772895682869,
   "recommendation_gini": 0.7537930465176212,
-  "checkpoint": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\ckpt\\global_step5.valid_loss=11.9938\\model.pt",
-  "dataset_root": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\data",
+  "checkpoint": "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/ckpt/global_step5.valid_loss=11.9938/model.pt",
+  "dataset_root": "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data",
   "dataset_statistics": {
     "num_users": 1411,
     "num_items": 3327,

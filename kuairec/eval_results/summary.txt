@@ -1,5 +1,5 @@
 KuaiRec Evaluation Summary
-Dataset directory: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\data
+Dataset directory: /Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data
 Users evaluated: 1411 | Hits: 7 | Top-10 hit rate: 0.0050
 Top-10 NDCG: 0.0028
 Unique items recommended: 704 (coverage 21.16% of catalog)
@@ -38,4 +38,4 @@ Actionable next steps:
 - Add user embeddings or switch to DuoRec for personalization and apply user-level regularization.
 - Train for 20–40 epochs with hidden_units=128–256 to raise hit@10 and NDCG.
 
-Recommendation diagnostics JSON: C:\Users\txn99360\Desktop\AdRec-GenAI\kuairec\eval_results\recommendation_diagnostics.json
+Recommendation diagnostics JSON: /Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/eval_results/recommendation_diagnostics.json

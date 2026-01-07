@@ -1,0 +1,17 @@
+# LLM-rec/config/base.yaml
+data:
+  big_matrix_path: "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data/big_matrix.csv"     # adjust to your actual path
+  small_matrix_path: "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data/small_matrix.csv" # if you use it later
+  sep: ","                                              # CSV separator
+
+training:
+  batch_size: 4096
+  num_epochs: 5
+  learning_rate: 0.001
+  val_ratio: 0.1     # 10% validation split
+
+model:
+  user_embedding_dim: 64
+  item_embedding_dim: 64
+  llm_embedding_dim: 384
+  hidden_dim: 128

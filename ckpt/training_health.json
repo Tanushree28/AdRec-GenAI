@@ -1,0 +1,325 @@
+{
+  "score": 24.53780983725519,
+  "label": "Critical",
+  "components": {
+    "loss_curve": {
+      "value": 0.7691679000854492,
+      "score": 0.06088384699258189
+    },
+    "hit_rate": {
+      "value": 0.0003073455588566745,
+      "score": 0.0015367277942833725
+    },
+    "ndcg": {
+      "value": 0.0027998041158055265,
+      "score": 0.013999020579027632
+    },
+    "diversity": {
+      "value": 0.21160204388337842,
+      "score": 0.21160204388337842
+    },
+    "personalization": {
+      "value": 100.0,
+      "score": 0.6058010219416892
+    },
+    "popularity_bias": {
+      "value": 0.1882369690898829,
+      "score": 0.8117630309101171
+    },
+    "long_tail_strength": {
+      "value": 0.012060996506785581,
+      "score": 0.012060996506785581
+    }
+  },
+  "issues": {
+    "popularity_collapse": true,
+    "underfitting": true,
+    "overfitting": false,
+    "insufficient_negative_sampling": false,
+    "too_long_sequences": false,
+    "poor_diversity": true,
+    "low_personalization": false,
+    "stale_behavior": false,
+    "weak_ndcg": true
+  },
+  "actionable_next_steps": [
+    "Downsample the top 1% most popular items or apply popularity-aware reweighting to break popularity collapse.",
+    "Train for 20\u201340 epochs and increase hidden_units to 128\u2013256 for more capacity."
+  ],
+  "best_epoch": {
+    "epoch": 3,
+    "phase": "epoch_summary",
+    "train_loss": 12.570148086547851,
+    "train_top1_acc": 0.00016502213572786142,
+    "train_hit_rate@5": 0.00011949878794086517,
+    "train_hit_rate@10": 0.00027314008672197753,
+    "valid_loss": 11.864197731018066,
+    "valid_top1_acc": 0.00015367277942833726,
+    "valid_hit_rate@5": 0.00015367277942833726,
+    "valid_hit_rate@10": 0.0003073455588566745,
+    "time": 1765938956.964502
+  },
+  "eval_metrics": {
+    "users_evaluated": 1411,
+    "topk": 10,
+    "hit_rate@k": 0.004961020552799433,
+    "ndcg@k": 0.0027998041158055265,
+    "hit_users": 7,
+    "unique_recommended_items": 704,
+    "catalog_coverage": 0.21160204388337842,
+    "average_hit_rank": 4.0,
+    "zero_hit_rate": 0.9950389794472005,
+    "recommendation_entropy_bits": 7.657772895682869,
+    "recommendation_gini": 0.7537930465176212,
+    "checkpoint": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\ckpt\\global_step5.valid_loss=11.9938\\model.pt",
+    "dataset_root": "C:\\Users\\txn99360\\Desktop\\AdRec-GenAI\\kuairec\\data",
+    "dataset_statistics": {
+      "num_users": 1411,
+      "num_items": 3327,
+      "total_interactions": 142511,
+      "avg_sequence_length": 101.0,
+      "median_sequence_length": 101.0,
+      "min_sequence_length": 101,
+      "max_sequence_length": 101,
+      "top_items": [
+        {
+          "item_id": "7988",
+          "count": 442
+        },
+        {
+          "item_id": "6523",
+          "count": 410
+        },
+        {
+          "item_id": "5027",
+          "count": 407
+        },
+        {
+          "item_id": "3382",
+          "count": 389
+        },
+        {
+          "item_id": "9485",
+          "count": 384
+        },
+        {
+          "item_id": "8716",
+          "count": 375
+        },
+        {
+          "item_id": "9824",
+          "count": 353
+        },
+        {
+          "item_id": "5659",
+          "count": 332
+        },
+        {
+          "item_id": "6533",
+          "count": 325
+        },
+        {
+          "item_id": "9916",
+          "count": 319
+        },
+        {
+          "item_id": "4688",
+          "count": 316
+        },
+        {
+          "item_id": "8460",
+          "count": 305
+        },
+        {
+          "item_id": "7414",
+          "count": 304
+        },
+        {
+          "item_id": "7975",
+          "count": 301
+        },
+        {
+          "item_id": "491",
+          "count": 298
+        },
+        {
+          "item_id": "1643",
+          "count": 293
+        },
+        {
+          "item_id": "3848",
+          "count": 287
+        },
+        {
+          "item_id": "6724",
+          "count": 282
+        },
+        {
+          "item_id": "6269",
+          "count": 279
+        },
+        {
+          "item_id": "1253",
+          "count": 275
+        }
+      ],
+      "avg_interactions_per_user": 101.0,
+      "avg_interactions_per_item": 42.83468590321611,
+      "top5_interaction_share": 0.01425854846292567,
+      "top_item_hits_all_users": false,
+      "head_item_distribution": {
+        "top_1_percent": {
+          "count": 34,
+          "share": 0.07295577183515659
+        },
+        "top_5_percent": {
+          "count": 167,
+          "share": 0.2563872262492018
+        },
+        "top_10_percent": {
+          "count": 333,
+          "share": 0.41286637522717545
+        }
+      },
+      "tail_item_distribution": {
+        "<10": {
+          "item_count": 659,
+          "interaction_share": 0.020152830307835885
+        },
+        "<5": {
+          "item_count": 365,
+          "interaction_share": 0.006006553880051365
+        },
+        "<2": {
+          "item_count": 110,
+          "interaction_share": 0.0007718702415953856
+        }
+      },
+      "long_tail_ratio": 0.020152830307835885,
+      "popularity_bias_score": 0.19596732883777393,
+      "dominant_items": [],
+      "item_entropy_bits": 10.751780460607657,
+      "item_gini": 0.5548375895682611,
+      "personalization_metrics": {
+        "unique_items_last_100": {
+          "avg": 100.0,
+          "median": 100.0,
+          "min": 100,
+          "max": 100
+        },
+        "category_diversity_last_100": null,
+        "recent_30d_interaction_ratio": 1.0,
+        "item_entropy_bits": 10.751780460607657,
+        "item_gini": 0.5548375895682611
+      },
+      "temporal_stats": {
+        "min_timestamp": "1970-01-01T00:00:01.593800606",
+        "max_timestamp": "1970-01-01T00:00:01.599321443",
+        "recent_30d_ratio": 1.0,
+        "timespan_days": 6.388888888888888e-08
+      },
+      "transformations": [
+        {
+          "applied": true,
+          "max_sequence_length": 101,
+          "removed_interactions": 4534059,
+          "affected_users": 1411,
+          "type": "sequence_trim"
+        }
+      ]
+    },
+    "transformations": [
+      {
+        "applied": true,
+        "max_sequence_length": 101,
+        "removed_interactions": 4534059,
+        "affected_users": 1411,
+        "type": "sequence_trim"
+      }
+    ],
+    "most_common_recommendations": [
+      [
+        "6870",
+        668
+      ],
+      [
+        "2321",
+        538
+      ],
+      [
+        "3974",
+        490
+      ],
+      [
+        "9129",
+        434
+      ],
+      [
+        "6946",
+        397
+      ],
+      [
+        "8498",
+        306
+      ],
+      [
+        "3703",
+        290
+      ],
+      [
+        "2259",
+        184
+      ],
+      [
+        "777",
+        171
+      ],
+      [
+        "2568",
+        167
+      ]
+    ],
+    "most_common_targets": [
+      [
+        "9806",
+        66
+      ],
+      [
+        "9901",
+        64
+      ],
+      [
+        "4364",
+        57
+      ],
+      [
+        "5381",
+        51
+      ],
+      [
+        "8663",
+        36
+      ],
+      [
+        "7297",
+        34
+      ],
+      [
+        "3940",
+        29
+      ],
+      [
+        "211",
+        27
+      ],
+      [
+        "7109",
+        27
+      ],
+      [
+        "3737",
+        26
+      ]
+    ]
+  }
+}
