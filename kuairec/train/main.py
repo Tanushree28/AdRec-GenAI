@@ -19,6 +19,7 @@ from .dataset import (
     trim_user_sequences,
 )
 from .model import KuaiRecModel
+from .model_llm import LLMKuaiRecModel
 
 
 def _format_percent(value: float) -> str:
@@ -258,6 +259,28 @@ def get_args() -> argparse.Namespace:
         default=42,
         help="Random seed for head-item downsampling.",
     )
+    parser.add_argument(
+        "--use_llm_emb",
+        action="store_true",
+        help="Use LLM-enhanced item (and optionally user) embeddings from kuairec/embeddings/.",
+    )
+    parser.add_argument(
+        "--use_user_llm",
+        action="store_true",
+        help="Inject user LLM profile as a prefix token (requires --use_llm_emb).",
+    )
+    parser.add_argument(
+        "--item_llm_path",
+        type=str,
+        default=None,
+        help="Path to item_llm_embeddings.npy (default: kuairec/embeddings/item_llm_embeddings.npy).",
+    )
+    parser.add_argument(
+        "--user_llm_path",
+        type=str,
+        default=None,
+        help="Path to user_llm_embeddings.npy (default: kuairec/embeddings/user_llm_embeddings.npy).",
+    )
     return parser.parse_args()
 
 
@@ -336,15 +359,42 @@ if __name__ == "__main__":
     )
 
     device = torch.device(args.device)
-    model = KuaiRecModel(
-        num_items=data.num_items,
-        hidden_units=args.hidden_units,
-        maxlen=args.maxlen,
-        num_heads=args.num_heads,
-        num_blocks=args.num_blocks,
-        dropout_rate=args.dropout_rate,
-        norm_first=args.norm_first,
-    ).to(device)
+
+    if args.use_llm_emb:
+        import numpy as np
+        emb_root = data_root.parent / "embeddings"
+        item_llm_path = Path(args.item_llm_path) if args.item_llm_path else emb_root / "item_llm_embeddings.npy"
+        print(f"Loading item LLM embeddings from: {item_llm_path}")
+        item_llm = torch.tensor(np.load(item_llm_path), dtype=torch.float32)
+
+        user_llm = None
+        if args.use_user_llm:
+            user_llm_path = Path(args.user_llm_path) if args.user_llm_path else emb_root / "user_llm_embeddings.npy"
+            print(f"Loading user LLM embeddings from: {user_llm_path}")
+            user_llm = torch.tensor(np.load(user_llm_path), dtype=torch.float32)
+
+        model = LLMKuaiRecModel(
+            num_items=data.num_items,
+            hidden_units=args.hidden_units,
+            maxlen=args.maxlen,
+            num_heads=args.num_heads,
+            num_blocks=args.num_blocks,
+            dropout_rate=args.dropout_rate,
+            item_llm_embeddings=item_llm,
+            user_llm_embeddings=user_llm,
+            norm_first=args.norm_first,
+        ).to(device)
+        print(f"Using LLMKuaiRecModel (user_prefix={'yes' if args.use_user_llm else 'no'})")
+    else:
+        model = KuaiRecModel(
+            num_items=data.num_items,
+            hidden_units=args.hidden_units,
+            maxlen=args.maxlen,
+            num_heads=args.num_heads,
+            num_blocks=args.num_blocks,
+            dropout_rate=args.dropout_rate,
+            norm_first=args.norm_first,
+        ).to(device)
 
     if args.state_dict_path:
         state_dict = torch.load(args.state_dict_path, map_location=device)
@@ -374,7 +424,10 @@ if __name__ == "__main__":
             mask = batch["mask"].to(device)
 
             optimizer.zero_grad()
-            seq_repr, pos_embs, neg_embs = model(seq, pos, neg)
+            user = batch.get("user")
+            user = user.to(device) if user is not None else None
+            fwd_kwargs = {"user_ids": user} if args.use_llm_emb and args.use_user_llm else {}
+            seq_repr, pos_embs, neg_embs = model(seq, pos, neg, **fwd_kwargs)
             loss, metrics = model.compute_infonce_loss(
                 seq_repr, pos_embs, neg_embs, mask, return_metrics=True
             )
@@ -436,7 +489,10 @@ if __name__ == "__main__":
             mask = batch["mask"].to(device)
 
             with torch.no_grad():
-                seq_repr, pos_embs, neg_embs = model(seq, pos, neg)
+                user = batch.get("user")
+                user = user.to(device) if user is not None else None
+                fwd_kwargs = {"user_ids": user} if args.use_llm_emb and args.use_user_llm else {}
+                seq_repr, pos_embs, neg_embs = model(seq, pos, neg, **fwd_kwargs)
                 loss, metrics = model.compute_infonce_loss(
                     seq_repr, pos_embs, neg_embs, mask, return_metrics=True
                 )
