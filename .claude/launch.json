@@ -1,0 +1,47 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "TensorBoard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "tensorboard.main", "--logdir", "events", "--port", "6006", "--bind_all"],
+      "port": 6006,
+      "autoPort": false
+    },
+    {
+      "name": "KuaiRec Training",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "kuairec.train.main"],
+      "port": 3001,
+      "autoPort": true
+    },
+    {
+      "name": "KuaiRec Inference",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "kuairec.test.main"],
+      "port": 3002,
+      "autoPort": true
+    },
+    {
+      "name": "LLM-rec: Build Item Embeddings",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["LLM-rec/src/build_item_llm_embeddings.py"],
+      "port": 3003,
+      "autoPort": true
+    },
+    {
+      "name": "LLM-rec: Train Baseline MLP",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["LLM-rec/src/train_baseline.py"],
+      "port": 3004,
+      "autoPort": true
+    },
+    {
+      "name": "LLM-rec: Train LLM MLP",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["LLM-rec/src/train_llm.py"],
+      "port": 3005,
+      "autoPort": true
+    }
+  ]
+}
