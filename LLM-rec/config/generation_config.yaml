@@ -1,0 +1,84 @@
+# LLM-rec/config/generation_config.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+# Single source of truth for all LLM embedding generation parameters.
+# Both build_item_llm_embeddings.py and build_user_llm_embeddings.py load
+# this file so that every run is fully reproducible from config alone.
+#
+# For full bit-level reproducibility:
+#   1. Pin `revision` below to the HF commit hash printed after first run.
+#   2. Pin sentence-transformers in requirements.txt (already done: ==5.3.0).
+#   3. Run on the same hardware type (CPU/GPU differences affect float rounding).
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Model ─────────────────────────────────────────────────────────────────────
+model:
+  name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+  # HuggingFace commit hash for the exact model snapshot used.
+  # Set to null on first run; the build scripts will print the resolved hash
+  # and you should paste it here to lock the weights permanently.
+  revision: null
+
+  # Architecture details (informational — do not change without re-running)
+  pooling_strategy: "mean"    # mean pooling over all non-padding token embeddings
+  max_seq_length: 128         # hard token limit; texts longer than this are truncated
+  embedding_dim: 384          # output dimensionality
+
+# ── Encoding ──────────────────────────────────────────────────────────────────
+encoding:
+  batch_size: 64
+
+  # If true, each embedding vector is L2-normalised to unit length before saving.
+  # Set to true if downstream models use cosine similarity (dot product on unit
+  # vectors). Currently false — raw embeddings are stored.
+  normalize_embeddings: false
+
+  # Device override. null = auto-detect (cuda > mps > cpu).
+  # Explicitly set to "cpu" to guarantee identical float32 bit patterns across runs.
+  device: null
+
+  precision: "float32"
+
+# ── Item profile construction ──────────────────────────────────────────────────
+# Each item is converted to a single text string by joining available metadata
+# fields with `field_separator`. Missing or empty fields are silently skipped.
+#
+# Resulting template (when all fields present):
+#   "cover: <manual_cover_text> | caption: <caption> | topics: <topic_tag> |
+#    category1: <first_level_category_name> | category2: <second_level_category_name>"
+item_profile:
+  field_separator: " | "
+  fallback_text: "no description"   # used when ALL fields are missing/empty
+  fields:
+    - column: "manual_cover_text"
+      prefix: "cover"
+    - column: "caption"
+      prefix: "caption"
+    - column: "topic_tag"
+      prefix: "topics"
+    - column: "first_level_category_name"
+      prefix: "category1"
+    - column: "second_level_category_name"
+      prefix: "category2"
+
+# ── User profile construction ──────────────────────────────────────────────────
+# Each user's profile is built by:
+#   1. Selecting their top-K videos by watch_ratio (descending).
+#   2. Converting each video to its item-profile text (same template as above).
+#   3. Optionally deduplicating identical descriptions.
+#   4. Joining with `item_separator` and prepending `prompt_prefix`.
+#
+# Full prompt example (top_k=3):
+#   "This user frequently watches: cover: 旅行 | caption: 海边日落; caption: 美食推荐;
+#    topics: 音乐 | category1: 娱乐"
+user_profile:
+  top_k: 20                                    # number of top-watched items per user
+  prompt_prefix: "This user frequently watches: "
+  item_separator: "; "
+  deduplicate_descriptions: true              # skip repeated item text within a profile
+
+# ── Reproducibility & logging ─────────────────────────────────────────────────
+reproducibility:
+  seed: 42                      # reserved for any future stochastic preprocessing
+  save_generation_metadata: true  # write a JSON sidecar alongside each .npy file
+  n_example_outputs: 5            # number of example texts/profiles saved in the JSON
