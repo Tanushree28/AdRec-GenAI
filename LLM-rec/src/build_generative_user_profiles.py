@@ -33,6 +33,13 @@ import sys
 import time
 from pathlib import Path
 
+# Auto-load .env from project root if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+except ImportError:
+    pass  # python-dotenv not installed — rely on env var being set manually
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
