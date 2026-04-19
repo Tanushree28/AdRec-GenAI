@@ -98,12 +98,24 @@ reproducibility:
 # The script is resumable — if interrupted, re-run and it picks up from the cache.
 generative:
   enabled: true
-  model: "mistralai/Mistral-7B-Instruct-v0.3"   # HuggingFace model id
-  hf_token_env: "HF_TOKEN"                        # name of the env var holding your token
 
-  # Generation parameters (kept low for reproducibility)
+  # ── Backend: "ollama" (local) or "huggingface" (API) ──────────────────
+  backend: "ollama"           # switch to "huggingface" to use HF Inference API instead
+
+  # Ollama settings (backend: ollama)
+  # Run `ollama list` to see installed models.
+  # llama3.1:8b is already installed on this machine.
+  ollama_model: "llama3.1:8b"
+  ollama_host: "http://localhost:11434"   # default ollama server address
+
+  # HuggingFace settings (backend: huggingface) — only used if backend != ollama
+  hf_model: "mistralai/Mistral-7B-Instruct-v0.3"
+  hf_token_env: "HF_TOKEN"
+  rate_limit_seconds: 0.5     # HF free-tier safety; ignored for ollama
+
+  # Generation parameters (same for both backends)
   max_new_tokens: 80       # ~2 sentences; keeps output within 128 encoder tokens
-  temperature: 0.2         # low temperature = more consistent across runs
+  temperature: 0.2         # low = more consistent/reproducible
 
   # Prompt sent to the generative model for each user.
   # {raw_profile} is replaced with the raw top-K item concatenation.
@@ -111,6 +123,3 @@ generative:
 
   # Where to save/load the generated summaries (resumable JSON cache)
   cache_path: "kuairec/embeddings/user_generative_summaries.json"
-
-  # Seconds to sleep between API calls — protects against free-tier rate limits
-  rate_limit_seconds: 0.5
