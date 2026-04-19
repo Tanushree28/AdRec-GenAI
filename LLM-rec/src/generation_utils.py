@@ -135,6 +135,34 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# ── Generative summary cache ───────────────────────────────────────────────────
+
+def load_generative_summaries(path: str | Path) -> dict[int, str]:
+    """
+    Load {user_id (int): summary_text (str)} from the generative cache JSON.
+
+    The cache is written by build_generative_user_profiles.py and has the form:
+        {
+          "model": "mistralai/Mistral-7B-Instruct-v0.3",
+          "generated_at": "...",
+          "summaries": {"0": "This user enjoys...", "1": "...", ...}
+        }
+
+    Raises FileNotFoundError with a helpful message if the cache doesn't exist yet.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Generative summaries cache not found: {path}\n"
+            "Run build_generative_user_profiles.py first:\n"
+            "  export HF_TOKEN=hf_xxxx\n"
+            "  python LLM-rec/src/build_generative_user_profiles.py"
+        )
+    with path.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return {int(k): v for k, v in data.get("summaries", {}).items()}
+
+
 # ── Embedding statistics ───────────────────────────────────────────────────────
 
 def embedding_l2_norm(vec: np.ndarray) -> float:

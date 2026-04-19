@@ -10,4 +10,5 @@ pytest>=7.1
 pytest-cov>=3.0
 black>=22.3
 sentence-transformers==5.3.0  # pinned for embedding reproducibility — see LLM-rec/config/generation_config.yaml
+huggingface_hub>=0.20         # InferenceClient for generative summarization step
 matplotlib>=3.5

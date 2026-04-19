@@ -12,7 +12,13 @@ model, encoding settings, prompt template, population statistics,
 and example user profiles for reproducibility.
 
 Usage:
+    # Standard (raw concatenation):
     python LLM-rec/src/build_user_llm_embeddings.py
+
+    # Generative summaries (run build_generative_user_profiles.py first):
+    python LLM-rec/src/build_user_llm_embeddings.py --use_generative
+
+    # Custom config:
     python LLM-rec/src/build_user_llm_embeddings.py --config path/to/config.yaml
 
 Full prompt example (top_k=3, deduplicate=True):
@@ -23,6 +29,7 @@ Full prompt example (top_k=3, deduplicate=True):
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +39,7 @@ from sentence_transformers import SentenceTransformer
 
 from generation_utils import (
     load_generation_config,
+    load_generative_summaries,
     get_model_revision,
     get_st_version,
     get_model_device,
@@ -143,6 +151,14 @@ def main(argv: list[str] | None = None) -> None:
         default=str(DEFAULT_CONFIG),
         help=f"Path to generation_config.yaml (default: {DEFAULT_CONFIG})",
     )
+    parser.add_argument(
+        "--use_generative",
+        action="store_true",
+        help=(
+            "Encode generative summaries (from build_generative_user_profiles.py) "
+            "instead of raw item concatenations. Saves to user_llm_embeddings_generative.npy."
+        ),
+    )
     args = parser.parse_args(argv)
 
     cfg = load_generation_config(args.config)
@@ -151,14 +167,20 @@ def main(argv: list[str] | None = None) -> None:
     item_cfg = cfg["item_profile"]
     user_cfg = cfg["user_profile"]
     repro_cfg = cfg["reproducibility"]
+    gen_cfg = cfg.get("generative", {})
 
     # ── Paths ──────────────────────────────────────────────────────────────────
     data_dir = ROOT / "kuairec" / "data"
     big_matrix_path = data_dir / "big_matrix.csv"
     out_dir = ROOT / "kuairec" / "embeddings"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "user_llm_embeddings.npy"
-    meta_path = out_dir / "user_generation_metadata.json"
+    # Use a separate output file for generative embeddings so both variants coexist
+    if args.use_generative:
+        out_path = out_dir / "user_llm_embeddings_generative.npy"
+        meta_path = out_dir / "user_generation_metadata_generative.json"
+    else:
+        out_path = out_dir / "user_llm_embeddings.npy"
+        meta_path = out_dir / "user_generation_metadata.json"
 
     # ── Load interaction data ──────────────────────────────────────────────────
     print(f"Loading big_matrix from: {big_matrix_path}")
@@ -189,6 +211,23 @@ def main(argv: list[str] | None = None) -> None:
     )
     print(f"  {pop_stats['n_users_below_k']} users had fewer than {top_k} interactions")
     print(f"  Avg unique descriptions/user: {pop_stats['avg_unique_descriptions_per_user']}")
+
+    # ── Optionally replace raw texts with generative summaries ────────────────
+    generative_used = False
+    generative_model_id = None
+    if args.use_generative:
+        cache_path = ROOT / gen_cfg["cache_path"]
+        gen_summaries = load_generative_summaries(cache_path)
+        n_found = sum(1 for uid in user_ids if uid in gen_summaries)
+        print(f"\nLoading generative summaries from: {cache_path}")
+        print(f"  {n_found}/{len(user_ids)} users have summaries")
+        # Replace texts; fall back to raw profile if summary missing
+        texts = [gen_summaries.get(uid, texts[i]) for i, uid in enumerate(user_ids)]
+        generative_used = True
+        # Read model id from cache for metadata
+        with cache_path.open(encoding="utf-8") as f:
+            generative_model_id = json.load(f).get("model", gen_cfg.get("model"))
+        print(f"  Generative model: {generative_model_id}")
 
     # ── Load sentence-transformer ──────────────────────────────────────────────
     device_override = enc_cfg.get("device") or None
@@ -279,6 +318,8 @@ def main(argv: list[str] | None = None) -> None:
                     f'"{prompt_prefix}<item_1_text>{item_separator}'
                     f'<item_2_text>{item_separator}...{item_separator}<item_{top_k}_text>"'
                 ),
+                "generative_summarization": generative_used,
+                "generative_model": generative_model_id,
                 **pop_stats,
             },
             "output": {

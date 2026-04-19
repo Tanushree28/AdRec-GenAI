@@ -82,3 +82,35 @@ reproducibility:
   seed: 42                      # reserved for any future stochastic preprocessing
   save_generation_metadata: true  # write a JSON sidecar alongside each .npy file
   n_example_outputs: 5            # number of example texts/profiles saved in the JSON
+
+# ── Generative summarization ───────────────────────────────────────────────────
+# Uses a HuggingFace Inference API model to write a natural-language summary of
+# each user's interests BEFORE encoding with the sentence-transformer above.
+# This fixes the 128-token truncation problem (raw profiles avg 583 tokens;
+# a 2-sentence summary fits cleanly within the limit).
+#
+# To activate:
+#   1. Set enabled: true
+#   2. Export your HF token:  export HF_TOKEN=hf_xxxx
+#   3. Run:  python LLM-rec/src/build_generative_user_profiles.py
+#   4. Then: python LLM-rec/src/build_user_llm_embeddings.py --use_generative
+#
+# The script is resumable — if interrupted, re-run and it picks up from the cache.
+generative:
+  enabled: true
+  model: "mistralai/Mistral-7B-Instruct-v0.3"   # HuggingFace model id
+  hf_token_env: "HF_TOKEN"                        # name of the env var holding your token
+
+  # Generation parameters (kept low for reproducibility)
+  max_new_tokens: 80       # ~2 sentences; keeps output within 128 encoder tokens
+  temperature: 0.2         # low temperature = more consistent across runs
+
+  # Prompt sent to the generative model for each user.
+  # {raw_profile} is replaced with the raw top-K item concatenation.
+  prompt_template: "You are analyzing a short-video platform user. Based on the following videos they watched most, write a 2-sentence summary of their interests in plain English. Be concise.\nVideos: {raw_profile}\nSummary:"
+
+  # Where to save/load the generated summaries (resumable JSON cache)
+  cache_path: "kuairec/embeddings/user_generative_summaries.json"
+
+  # Seconds to sleep between API calls — protects against free-tier rate limits
+  rate_limit_seconds: 0.5
