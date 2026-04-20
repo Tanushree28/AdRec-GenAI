@@ -123,6 +123,13 @@ class LLMKuaiRecModel(KuaiRecModel):
         user_ids: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         seq_repr = self.encode_sequence(seq_items, user_ids=user_ids)
+
+        # When the user-LLM prefix token was prepended, seq_repr has shape
+        # [B, L+1, H]. Strip the prefix so the output matches the original
+        # [B, L, H] that compute_infonce_loss (and its mask) expects.
+        if self.use_user_llm and user_ids is not None:
+            seq_repr = seq_repr[:, 1:, :]   # drop prefix token, keep item positions
+
         pos_embs = self._item_token(pos_items)
         neg_embs = self._item_token(neg_items)
         return seq_repr, pos_embs, neg_embs
