@@ -5,7 +5,8 @@ data:
   sep: ","                                              # CSV separator
 
 training:
-  batch_size: 512   # reduced from 4096 — 4096 causes SIGKILL (OOM) on MacBook Air
+  batch_size: 512        # MLP batch size (fits fine)
+  transformer_batch_size: 64   # Transformer needs much less — attention is O(n²) memory
   num_epochs: 5
   learning_rate: 0.001
   val_ratio: 0.1     # 10% validation split

@@ -208,10 +208,14 @@ def run_transformer(model_key: str, use_llm: bool, use_user_llm: bool, cfg: dict
     ckpt_dir = out_dir / "checkpoints" / model_key
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
+    # Transformers need a much smaller batch size than MLPs —
+    # attention is O(n²) in memory. Fall back to 64 if not set.
+    tf_batch = train_cfg.get("transformer_batch_size", 64)
+
     cmd = [
         sys.executable, "-m", "kuairec.train.main",
         "--num_epochs", str(train_cfg["num_epochs"]),
-        "--batch_size", str(train_cfg["batch_size"]),
+        "--batch_size", str(tf_batch),
     ]
     if use_llm:
         cmd.append("--use_llm_emb")
