@@ -3,13 +3,17 @@ data:
   big_matrix_path: "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data/big_matrix.csv"     # adjust to your actual path
   small_matrix_path: "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data/small_matrix.csv" # if you use it later
   sep: ","                                              # CSV separator
+  matrix: "big"          # small|big — which interaction matrix the transformers train on
 
 training:
   batch_size: 512        # MLP batch size (fits fine)
   transformer_batch_size: 64   # Transformer needs much less — attention is O(n²) memory
-  num_epochs: 5
+  num_epochs: 40         # MLPs; early stopping usually halts sooner
+  transformer_num_epochs: 40   # reviewers asked for 30-40+ epochs to convergence
+  patience: 5            # early-stopping patience (MLPs)
   learning_rate: 0.001
   val_ratio: 0.1     # 10% validation split
+  # device: cpu      # uncomment to override auto-detect (cuda > mps > cpu)
 
 model:
   user_embedding_dim: 64

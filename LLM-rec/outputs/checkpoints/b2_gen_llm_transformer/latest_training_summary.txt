@@ -1,0 +1,44 @@
+KuaiRec Training Summary
+Dataset directory: /Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data
+Users: 1411 | Items: 3327 | Interactions: 196667
+
+Sequence length statistics:
+  avg=139.38 | median=142.00 | min=121 | max=150
+
+Head/tail distribution:
+  Top 1% share: 6.81% (34 items), Top 5% share: 24.67%, Top 10% share: 40.10%
+  Tail <10/<5/<2 share: 1.21% / 0.34% / 0.04%
+  Long-tail ratio (<10 freq): 1.21% | Popularity bias score: 0.19
+
+Personalization snapshot:
+  Unique items in last 100 (avg/median/min/max): 100.00 / 100.00 / 100 / 100
+  Item entropy/Gini: 10.79 bits / 0.55
+
+Data preprocessing steps:
+  Trimmed sequences to last 150 interactions for 1411 users (4464920 interactions removed).
+  Downsampled top 1.0% items (keep_prob=0.3) removing 14983 interactions across 1275 users.
+  Last-30-day interaction ratio: 100.00%
+
+Best epoch (by validation loss):
+  epoch 5 with valid_loss=8.5208, hit_rate@10=0.0080, top1_acc=0.0016
+
+Most interacted items:
+  9284: 450 interactions
+  9824: 448 interactions
+  10552: 446 interactions
+  4822: 446 interactions
+  1579: 434 interactions
+  Dominant items: None detected
+
+Training health score: 25.0/100 (Critical).
+Issues detected: popularity collapse, underfitting, poor diversity, weak ndcg
+
+Evaluation snapshot (latest metrics.json):
+  Hit rate@10: 0.0050 | NDCG: 0.0028 | Coverage: 21.16%
+
+Actionable next steps:
+- Downsample the top 1% most popular items or apply popularity-aware reweighting to break popularity collapse.
+- Train for 20–40 epochs and increase hidden_units to 128–256 for more capacity.
+
+Dataset diagnostics: /Users/tanushreenepal/Desktop/AdRec-GenAI/LLM-rec/outputs/checkpoints/b2_gen_llm_transformer/dataset_diagnostics.json
+Training health JSON: /Users/tanushreenepal/Desktop/AdRec-GenAI/LLM-rec/outputs/checkpoints/b2_gen_llm_transformer/training_health.json

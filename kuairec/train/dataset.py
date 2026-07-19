@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -290,9 +291,16 @@ def load_kuairec_data(data_dir: str | Path) -> KuaiRecData:
     if not data_path.exists():
         raise FileNotFoundError(f"KuaiRec data directory does not exist: {data_path}")
 
-    interaction_path = data_path / "small_matrix.csv"
+    # KUAIREC_MATRIX=big forces big_matrix.csv even when small_matrix.csv exists.
+    preferred = os.environ.get("KUAIREC_MATRIX", "small").strip().lower()
+    matrix_order = (
+        ("big_matrix.csv", "small_matrix.csv")
+        if preferred == "big"
+        else ("small_matrix.csv", "big_matrix.csv")
+    )
+    interaction_path = data_path / matrix_order[0]
     if not interaction_path.exists():
-        interaction_path = data_path / "big_matrix.csv"
+        interaction_path = data_path / matrix_order[1]
     if not interaction_path.exists():
         available = ", ".join(sorted(p.name for p in data_path.glob("*.csv"))) or "<none>"
         raise FileNotFoundError(

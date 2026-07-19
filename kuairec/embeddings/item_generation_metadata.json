@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-04-18T00:21:10Z",
+  "config_path": "/Users/tanushreenepal/Desktop/AdRec-GenAI/LLM-rec/config/generation_config.yaml",
+  "model": {
+    "name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "sentence_transformers_version": "5.3.0",
+    "revision": null,
+    "pooling_strategy": "mean",
+    "max_seq_length": 128,
+    "embedding_dim": 384
+  },
+  "encoding": {
+    "batch_size": 64,
+    "normalize_embeddings": false,
+    "device": "mps:0",
+    "precision": "float32"
+  },
+  "item_profile": {
+    "field_separator": " | ",
+    "fallback_text": "no description",
+    "fields": [
+      "cover",
+      "caption",
+      "topics",
+      "category1",
+      "category2"
+    ],
+    "prompt_template": "cover: <manual_cover_text> | caption: <caption> | topics: <topic_tag> | category1: <first_level_category_name> | category2: <second_level_category_name>",
+    "n_items_total": 6093,
+    "n_fallback_used": 0
+  },
+  "output": {
+    "path": "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/embeddings/item_llm_embeddings.npy",
+    "shape": [
+      10727,
+      384
+    ],
+    "dtype": "float32",
+    "md5": "7c68b9d11b5a950b0aac20af00e28cf7"
+  },
+  "examples": [
+    {
+      "item_id": 0,
+      "text": "cover: UNKNOWN | caption: 精神小伙路难走 程哥你狗粮慢点撒 | topics: [] | category1: 颜值 | category2: 颜值随拍",
+      "token_count": 52,
+      "embedding_l2_norm": 2.951478
+    },
+    {
+      "item_id": 1,
+      "text": "cover: UNKNOWN | topics: [] | category1: 高新数码 | category2: UNKNOWN",
+      "token_count": 33,
+      "embedding_l2_norm": 4.060897
+    },
+    {
+      "item_id": 2,
+      "text": "cover: UNKNOWN | caption: 晚饭后，运动一下！ | topics: [] | category1: 喜剧 | category2: 搞笑互动",
+      "token_count": 42,
+      "embedding_l2_norm": 3.687989
+    },
+    {
+      "item_id": 3,
+      "text": "cover: UNKNOWN | caption: 我平淡无奇，惊艳不了时光，温柔不了岁月，我只想漫无目的的走走，努力发笔小财，给自己买花 自己长大. | topics: [] | category1: 摄影 | category2: 主题摄影",
+      "token_count": 71,
+      "embedding_l2_norm": 2.816245
+    },
+    {
+      "item_id": 6,
+      "text": "cover: UNKNOWN | caption: 记住我的名字还有我带给你的故事. | topics: [] | category1: 情感 | category2: UNKNOWN",
+      "token_count": 44,
+      "embedding_l2_norm": 3.403062
+    }
+  ]
+}

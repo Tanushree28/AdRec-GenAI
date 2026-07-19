@@ -1,0 +1,151 @@
+Generative AI for Short-Video Feed Recommendation on KuaiRec: A Proxy Study for In-Feed Ad Optimization” to the ACM RecSys 2026 Main Track. We regret to inform you that your submission has not been accepted for publication at RecSys 2026.  
+ 
+ METAREVIEW  ------------------------
+The paper proposes GSE, a framework that integrates traditional ID-based embeddings with LLM-generated semantic representations (using Mistral 7B) to improve short-video feed recommendations. The motivation is to overcome token-truncation limits in lightweight embedding models by compressing user interaction histories into dense summaries. All reviewers agree on clean and systematic evaluation design across different architectures and representations, and the paper is nice written. However, some main concerns are: (1). the title/framing is misleading, the paper's framing around in-feed ad optimization. The KuaiRec dataset does not contain advertisement-specific signals (e.g., bid prices, CTR); (2). the reviewers are concerned about the the lack of comparison against strong baselines and it seems absolute hit@10 is low; and (3). reviewers are concerned that the model are only trained for 5 epochs and failed to converge to lead a valid conclusion. Given the current stage of the
+ paper, it does not meet the bar for acceptance.
+
+
+----------------------- REVIEW 1 ---------------------
+
+SUBMISSION: 207
+TITLE: Generative AI for Short-Video Feed Recommendation on KuaiRec: A Proxy Study for In-Feed Ad Optimization
+
+----------- Strong Points -----------
+1. The topic is very relevant. Short-form video recommendation is an active and important area, and integrating LLM representations into recommendation pipelines is being actively explored/implemented. The overall fit of the paper to RecSys is good.
+
+2. The experimental design is clean and systematic. Six variants across two architectures (MLP/Transformer), two representation types (ID-only vs ID+semantic), and two user profile methods (raw vs generative), with within-track comparisons that isolate individual variables.
+----------- Weak Points -----------
+1. The contribution is too incremental for a long paper. "Concatenate LLM-generated semantic embeddings with ID embeddings" is well-trodden ground in the hybrid recommendation literature. The specific use of Mistral-7B for user profile summarization is a practical engineering choice, not a methodological advance.
+
+2. The dataset is very small. KuaiRec small_matrix has only 1,411 users x 3,327 items. The absolute Hit@10 values are very low (0.0080 for the best model = 0.8% hit rate). With a catalog of 3,327 items, random chance would give roughly 0.3%, so the best model is only about 2.7x better than random. The authors should have included some simple heuristic based baselines to help us understand why is 0.8% hit rate still impressive. This raises questions about whether meaningful learning is happening at this scale and training duration.
+
+3. Models are trained for only 5 epochs without reaching convergence. The learning curves (Figure 4) show Transformer models still improving at epoch 5. The paper acknowledges this ("longer training is expected to widen the gap") but does not run the experiment. For a long paper, training to convergence should be a minimum bar.
+
+4. The "proxy for in-feed ad optimization" framing is unsupported. There are no ads in KuaiRec. No advertiser intent, bid landscape, ad-organic interleaving, CTR/CVR distinction, or budget constraints. The paper studies short-video recommendation and calls it an "ad proxy" without justifying why the findings would transfer.
+----------- Relevance to the Track -----------
+SCORE: 4 (Fits)
+----------- Originality -----------
+SCORE: 2 (Limited)
+----------- Coverage of Related Literature -----------
+SCORE: 2 (Weak)
+----------- Technical Soundness -----------
+SCORE: 2 (Weak Technical Rigor)
+----------- Overall Presentation -----------
+SCORE: 4 (Well-Presented)
+----------- Impact -----------
+SCORE: 2 (Limited)
+----------- Reproducibility of Methods (N/A for Past, Present and Future papers) -----------
+SCORE: 4 (Highly  Reproducible)
+----------- Review -----------
+This paper investigates whether adding LLM-generated semantic embeddings to traditional ID-based recommendation models improves performance on KuaiRec for short-video recommendation. The topic is relevant and the experimental design with six systematic variants is clean.
+
+Relevance: Good fit. Short-form video recommendation and the integration of LLM representations into recommendation pipelines are active and important research areas.
+
+Originality: The contribution is too incremental for a long paper. Concatenating semantic embeddings with ID embeddings is well-established in the hybrid recommendation literature, and the paper does not cite major works in this space (DeepFM, Wide&Deep, P5, TALLRec), suggesting limited engagement with the field. The user profile summarization step is a practical observation but not a methodological advance.
+
+Technical soundness: The experimental design is systematic, but the execution has significant gaps. The dataset is not real world scale (~3K candidates), and the absolute Hit@10 of 0.008 means the best model is really poor (eg: TallRec based variants have 0.558 Hit@10 on KuaiRec). Models are trained for only 5 epochs without reaching convergence, with Figure 4 showing loss still improving. The "ad optimization" framing is unsupported since KuaiRec contains no ads, no advertiser intent, and no budget constraints.
+
+Impact and reproducibility: The impact is limited by the small scale and the near-random performance numbers. It is hard to draw actionable conclusions from Hit@10 of 0.8%. KuaiRec is public and the setup is reproducible, but the very small scale means reproducing it would not tell us much about real-world behavior.
+
+Overall presentation: Adequate. The paper is structured clearly and the ablation design is easy to follow. The title and framing overstate the contribution ("In-Feed Ad Optimization" when there are no ads in the data).
+
+The user profile truncation observation could work as a workshop contribution, but the overall contribution does not meet the bar for a RecSys long paper.
+----------- Overall Evaluation -----------
+SCORE: -2 (Reject)
+
+
+----------------------- REVIEW 2 ---------------------
+
+SUBMISSION: 207
+TITLE: Generative AI for Short-Video Feed Recommendation on KuaiRec: A Proxy Study for In-Feed Ad Optimization
+
+----------- Strong Points -----------
+* The authors provide a good evaluation setup with well-designed ablation experiments
+* The paper is put together well, and the technical material is accessible
+* The authors have been honest with their limitations and mention this in the follow-up w
+----------- Weak Points -----------
+* The paper title mentions ad optimization but there's no mention of ad load or anything specific in their methodology pertaining to ad items.
+* The authors mention one of the motivations being limitations for long-tail items with sparse interaction but they don't address
+----------- Relevance to the Track -----------
+SCORE: 5 (Strong fit)
+----------- Originality -----------
+SCORE: 3 (Moderate)
+----------- Coverage of Related Literature -----------
+SCORE: 2 (Weak)
+----------- Technical Soundness -----------
+SCORE: 2 (Weak Technical Rigor)
+----------- Overall Presentation -----------
+SCORE: 4 (Well-Presented)
+----------- Impact -----------
+SCORE: 3 (Moderate)
+----------- Reproducibility of Methods (N/A for Past, Present and Future papers) -----------
+SCORE: 2 (Weak)
+----------- Review -----------
+The paper proposes Generative Semantic Enhancement (GSE), a framework that fuses traditional ID embeddings with LLM-based semantic representations to improve short-video feed recommendations. By using Mistral-7B to compress verbose user interaction histories into highly dense, two-sentence summaries, the authors successfully bypass the strict token-truncation limits of lightweight embedding models, yielding a +220% relative improvement in sequential ranking and a 2.9% reduction in watch-ratio prediction MSE on the KuaiRec dataset.
+
+Strengths:
+* Although misleadingly titled, the paper proposes (but doesn't perfectly execute) a thorough evaluation framework. I especially appreciate the evaluate ablation setup the authors devise and this in itself is a template worth following in future LLM-recsys papers.
+* The paper overall is quite well written with good motivation (cold-start weaknesses in current work)
+* The authors have been forthright with limitations to their work and have discussed this as part of their follow-up work
+
+Weaknesses:
+* The paper title mentions ad optimization but there's no mention of ad load or anything specific in their methodology pertaining to ad items.
+* The authors mention one of the motivations being limitations for long-tail items with sparse interaction but they don't specifically explain or demonstrate how their approach solves this shortcoming. In particular, the authors didn't include any segment-specific evaluation for cold-start categories.
+* B2 and B2-Gen are (nearly) identical in performance in the present regime (5 epochs), so it's unclear without further evaluations why the user-prefix tokens should be included in B2-Gen. The authors hypothesize that the gap separates further out, but this is not backed up by empirical results.
+* No Revenue-Engagement Trade-off: The learning objectives are flat watch-ratio regression (MSE) or sequential next-item ranking (InfoNCE). There is no multi-task optimization to balance platform monetization (e.g., cost-per-click or ad conversions) with organic user retention.
+* Failure to address popularity bias: Section 6.5 reveals that all three sequence models (A2, B2, B2-Gen) achieve the exact same item coverage (21.16%) and identical popularity bias scores (0.188). The authors' claim that this mitigates bias is empirically disproven by their own diversity results.
+
+Note on related work:
+
+1. Consolidate the duplicate citations ([4] and [12]) and replace the non-peer-reviewed thesis citations ([3], [11]) with primary literature from RecSys, KDD, or SIGIR.
+2. For a top-tier conference like RecSys, citing undergraduate and master's theses for foundational concepts—instead of peer-reviewed IEEE, ACM, NeurIPS, or SIGIR literature—greatly diminishes the academic authority of the text. The authors cite a Bachelor's thesis to define "social media video optimization," and a Master's thesis to reference "mitigating popularity bias."
+----------- Overall Evaluation -----------
+SCORE: -2 (Reject)
+----------- Key Clarification -----------
+1. Can you provide a segmented performance analysis of Hit@10 and MSE across different item popularity percentiles (e.g., Head vs. Tail)?
+2. Did you run experiments with longer training regimes (>30-40 epochs) to see if there's any value from augmenting ID-based models with LLM semantic embeddings?
+3. Can you shed more light on why the generative compression step (B2-Gen) yields zero performance improvement over raw concatenation?
+
+
+----------------------- REVIEW 3 ---------------------
+
+SUBMISSION: 207
+TITLE: Generative AI for Short-Video Feed Recommendation on KuaiRec: A Proxy Study for In-Feed Ad Optimization
+
+----------- Strong Points -----------
+1.      The paper identifies the token truncation problem in recommendation systems and proposes a practical solution using LLM-generated user profile summaries.
+2.      The ablation study is carefully designed with six clear model variants, which helps validate the contribution of each component.
+3.      The framework is well-presented and demonstrates a reasonable integration of generative AI techniques into recommendation tasks.
+----------- Weak Points -----------
+1.      The overall originality is moderate because it builds heavily on existing works without introducing groundbreaking concepts..
+2.      The paper lacks comparisons with strong published baselines.
+3.      The framing as an “in-feed ad optimization” study is misleading because no advertisement-specific signals are incorporated.
+----------- Relevance to the Track -----------
+SCORE: 4 (Fits)
+----------- Originality -----------
+SCORE: 3 (Moderate)
+----------- Coverage of Related Literature -----------
+SCORE: 3 (Moderate)
+----------- Technical Soundness -----------
+SCORE: 3 (Adequate Technical Soundness)
+----------- Overall Presentation -----------
+SCORE: 4 (Well-Presented)
+----------- Impact -----------
+SCORE: 2 (Limited)
+----------- Reproducibility of Methods (N/A for Past, Present and Future papers) -----------
+SCORE: 3 (Moderate)
+----------- Review -----------
+This paper presents a practical approach to addressing token truncation issues in recommendation systems by using Mistral-7B to generate user profile summaries. The idea is practical and well-motivated, and the ablation study is carefully designed with multiple variants that clearly analyze the contributions of different components.
+However, the technical execution has several important weaknesses.
+This paper has a very well-designed ablation study and correctly identifies a token-truncation problem. Using generative summaries is good. However, the technical execution needs significant improvement before publication.
+●       The authors are suggested to include some published baselines  on KuaiRec dataset to show the performance comparisons.
+●       The experiment does not use any advertising signals (like click-through rates or bid prices). The authors are suggested to either add ad-specific features or change the title/framing to just "general feed recommendation".
+●       Hit@10 scores are very low. Please clarify the negative sampling strategy (InfoNCE) and add statistical tests to prove the improvements are significant.
+Overall, the paper contains an interesting and practical idea, but the experimental methodology and evaluation require substantial strengthening before publication.
+----------- Overall Evaluation -----------
+SCORE: -1 (Weak reject)
+----------- Key Clarification -----------
+●       Please include comparisons with strong published baselines.
+●       Please clarify the negative sampling strategy used in InfoNCE training.
+●       Please provide statistical significance testing for the reported improvements.
+●       Please either include advertisement-specific signals or revise the paper framing away from “ad optimization”.

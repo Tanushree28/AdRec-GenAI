@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-04-18T00:22:47Z",
+  "config_path": "/Users/tanushreenepal/Desktop/AdRec-GenAI/LLM-rec/config/generation_config.yaml",
+  "model": {
+    "name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "sentence_transformers_version": "5.3.0",
+    "revision": null,
+    "pooling_strategy": "mean",
+    "max_seq_length": 128,
+    "embedding_dim": 384
+  },
+  "encoding": {
+    "batch_size": 64,
+    "normalize_embeddings": false,
+    "device": "mps:0",
+    "precision": "float32"
+  },
+  "user_profile": {
+    "top_k": 20,
+    "prompt_prefix": "This user frequently watches: ",
+    "item_separator": "; ",
+    "deduplicate_descriptions": true,
+    "prompt_template": "\"This user frequently watches: <item_1_text>; <item_2_text>; ...; <item_20_text>\"",
+    "n_users_total": 7176,
+    "n_users_below_k": 0,
+    "avg_unique_descriptions_per_user": 13.29,
+    "min_descriptions": 3,
+    "max_descriptions": 20
+  },
+  "output": {
+    "path": "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/embeddings/user_llm_embeddings.npy",
+    "shape": [
+      7176,
+      384
+    ],
+    "dtype": "float32",
+    "md5": "ca2eb32b2880a4e78fb4a14f7aa49265"
+  },
+  "examples": [
+    {
+      "user_id": 0,
+      "profile_text": "This user frequently watches: cover: 男孩子版的干将莫邪 | caption: 🍉漫画人物就是你了@九霖❤️(O95186761) | topics: [] | category1: 其他 | category2: 生活泛拍; cover: UNKNOWN | caption: 等了好久终于拍到了，火车每次经过大桥都会鸣笛，这是为什么呢？#贵州 | topics: [贵州] | category1: 旅游 | category2: 旅游玩法; no description; cover: UNKNOWN | caption: 推开门发现爷俩睡着了，果然半职奶爸带娃从来不会让我担心#半职奶爸带娃去旅行 | topics: [半职奶爸带娃去旅行] | category1: 亲子 | category2: UNKNOWN; cover: UNKNOWN | caption: 我不懂打篮球.打游戏很菜.但我可以听你讲游戏.可以在你打完篮球给你送水.因为是你.所以我觉得值得 | topics: [] | category1: 宠物 | category2: 宠物日常记录; cover: UNKNOWN | caption: 考前考后不都是自己孩子吗？为何差别这么大？ | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 山西”黑老大“任爱军在监狱里开单间设小灶，用冰箱、电脑，酒后无故打人。这背后涉及多名公职人员。 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 爱你的人会注意你所有的细节❤️ 搭档：@小玥（凡家）(O1209560801) | topics: [] | category1: 短剧 | category2: UNKNOWN; cover: 惊险一幕！ | caption: 这波操作厉害了！ @中警安徽(O633081853) | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: 消防员:前方白车请注意，你把老婆忘在服务区加油站了！ | caption: #消防员:前方白车请注意，你把 老婆忘在服务区加油站了！后来，司机咬着后槽牙和消防员说了一声：谢谢！ | topics: [消防员] | category1: 民生资讯 | category2: UNKNOWN",
+      "profile_token_count": 583,
+      "embedding_l2_norm": 3.937165
+    },
+    {
+      "user_id": 1,
+      "profile_text": "This user frequently watches: no description; cover: UNKNOWN | caption: 佩服马爸爸，马云高考考三次，别人比分数他比次数，就是这么牛😂 | topics: [] | category1: 明星娱乐 | category2: UNKNOWN; cover: UNKNOWN | caption: 截至8月31日8时，全球累计新冠确诊超2511万例！ | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: 美国单日新增确诊近6万例 | caption: #美国新冠确诊近300万例#单日新增确诊近6万例 # | topics: [美国新冠确诊近300万例] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 小学女教师两个月升副校长 教育局回应已介入调查 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 路遇丈夫载小三妻子当街逼停豪车 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: #生活小妙招 # | topics: [生活小妙招] | category1: 生活 | category2: UNKNOWN; cover: UNKNOWN | caption: 你才是初恋，其他人都是排练 | topics: [] | category1: 自拍 | category2: UNKNOWN; cover: 给我米线加二两牛肉 | topics: [] | category1: 美食 | category2: 美食教程; cover: 儿子抱生病妈妈来回走动 | caption: 妈妈说身上疼，儿子就像小时候妈妈抱着生病的自己一样抱着妈妈。这一幕像极了小时候，只不过角色互换了一下。 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 2009年至2019年三亚原副市长蓝文全利用职务便利收受贿赂折合人民币共计1541万余元，因受贿罪被判有期徒刑11年，并处罚金人民币180万元。 | topics: [] | category1: 民生资讯 | category2: UNKNOWN; cover: UNKNOWN | topics: [] | category1: 艺术 | category2: UNKNOWN; cover: UNKNOWN | caption: 因车顶放蜘蛛侠玩偶被罚，车主质疑：那些放葫芦娃的你咋不罚！ | topics: [] | category1: 民生资讯 | category2: 社会事件",
+      "profile_token_count": 645,
+      "embedding_l2_norm": 3.504992
+    },
+    {
+      "user_id": 2,
+      "profile_text": "This user frequently watches: cover: UNKNOWN | caption: 是它自己跳进来的 | topics: [] | category1: 科学与法律 | category2: 科学; no description; cover: UNKNOWN | caption: 小哥哥凭实力撩小姐姐吧？ | topics: [] | category1: 时尚 | category2: 潮流; cover: UNKNOWN | topics: [] | category1: 美食 | category2: 美食日常; cover: 热巴太好看了吧 | caption: 这么美，爱了爱了💕 | topics: [] | category1: 明星娱乐 | category2: 娱乐八卦; cover: UNKNOWN | caption: 老婆又逛街去了 | topics: [] | category1: 短剧 | category2: UNKNOWN; cover: 女孩子的梦/- | caption: 一个认识了八年的女孩@劉마마☆🎡(O1828357634) | topics: [] | category1: 时尚 | category2: UNKNOWN; cover: UNKNOWN | caption: 向鱼问水，向马问路 向神佛打听我一生的出处 而我呀 我是疼在谁心头的一抔尘土 一尊佛祖，两世糊涂 | topics: [] | category1: 摄影 | category2: UNKNOWN; cover: UNKNOWN | caption: 🐯说：就这？ | topics: [] | category1: 舞蹈 | category2: UNKNOWN; cover: UNKNOWN | caption: 太真实了 | topics: [] | category1: 喜剧 | category2: UNKNOWN",
+      "profile_token_count": 412,
+      "embedding_l2_norm": 3.59142
+    },
+    {
+      "user_id": 3,
+      "profile_text": "This user frequently watches: cover: UNKNOWN | caption: 截至8月31日8时，全球累计新冠确诊超2511万例！ | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: 高考前，杭州一学霸突然“智商下降” | caption: 高考前，杭州一学霸突然“智商下降”，耳鸣听不见 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 内蒙古处级官员白海泉，贪污数额超170000000元人民币，超过贫困乡镇多年收入总和。#反腐反贪 | topics: [反腐反贪] | category1: 民生资讯 | category2: UNKNOWN; cover: UNKNOWN | caption: 一栋楼住8000头猪！四川遂宁落成9层养猪大楼，快来看看吧#楼房养猪 | topics: [楼房养猪] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 济南输入德国无症状感染者1例。 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: 闺蜜4人聚会 竟然发现“男友”是同一人 | caption: 闺蜜4人聚会，竟然发现“男友”是同一人 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: 擒敌拳挡抓扼喉+防下直打+双挒手黑虎拦路 | caption: 强身健体：擒敌拳挡抓扼喉+防下直打+双挒手黑虎拦路 # | topics: [] | category1: 运动 | category2: 搏击运动; no description; cover: 跳舞机？！ | caption: 跳舞机？泰国网友恶搞复航后兴奋的飞机😂 | topics: [] | category1: 军事 | category2: 军事装备; cover: UNKNOWN | caption: 三秒视频 | topics: [] | category1: 颜值 | category2: UNKNOWN; cover: 要求安倍下台 | caption: 日本抗议活动现场，民众要求安倍下台. | topics: [] | category1: 时政资讯 | category2: 国际时政; cover: 原来你喜欢小奶狗，害我装那么久的狼！ | caption: 原来你喜欢小奶狗，害我装那么久的狼！ | topics: [] | category1: 宠物 | category2: UNKNOWN; cover: t | caption: 听说会单挑眉的 #T 都很帅 | topics: [T] | category1: 颜值 | category2: UNKNOWN; cover: UNKNOWN | caption: 为啥给嘉怡穿袜袜这么难 @刘心孜.(O409325672) | topics: [] | category1: 时尚 | category2: UNKNOWN; cover: 生了孩子也是少女 | caption: 哈哈哈哈 我只有16岁 别骂我！ | topics: [] | category1: 颜值 | category2: UNKNOWN",
+      "profile_token_count": 782,
+      "embedding_l2_norm": 4.048569
+    },
+    {
+      "user_id": 4,
+      "profile_text": "This user frequently watches: cover: 倾斜45° | caption: 听说很少人能做到迈克尔杰克逊的倾斜45°，今天我来挑战一下！#这就是街舞 | topics: [这就是街舞] | category1: 舞蹈 | category2: 潮流舞蹈; cover: UNKNOWN | caption: 画面好有爱 | topics: [] | category1: 亲子 | category2: 晒娃; cover: UNKNOWN | caption: 贵州深山里发现的仙境，峡谷之上还有一座承载了上百年历史的铁索桥！#跟着快手去旅行 | topics: [跟着快手去旅行] | category1: 摄影 | category2: 主题摄影; cover: 北京惊现雷雨云砧 | caption: 网友实拍北京雷雨云砧，闪电穿梭其中，魔幻特技，十分壮观！ | topics: [] | category1: 摄影 | category2: 主题摄影; cover: UNKNOWN | caption: 奶奶说：没有谁配不上谁，两块一包的盐，可以配上万的一桌的菜，但上万的菜，没有盐，也是淡然无味”  #快手创作者服务中心 | topics: [快手创作者服务中心] | category1: 摄影 | category2: 主题摄影; no description; cover: UNKNOWN | caption: 放暑假，把神兽送他舅舅那里去，赶紧跑，我们清净几天 | topics: [] | category1: 喜剧 | category2: 喜剧段子; cover: UNKNOWN | caption: 这个晕海的小姑娘太可爱了 | topics: [] | category1: 亲子 | category2: 晒娃; cover: 带娃只服她爸😂😂 | caption: 活出了太后的感觉😂😂 | topics: [] | category1: 喜剧 | category2: UNKNOWN; cover: UNKNOWN | caption: 本人儿科医生一枚，无偿为你排忧解难育儿，路上让你少花钱少走弯路双击关注，育儿知识每天更新！ @崔氏育儿堂(O1393260041) @儿科医生千金(O1210588075) @儿科医生妈妈(O877546804) @儿科医生麻麻(O1439054069) @儿科硕士妈妈(O1416863563) @儿科专家妈妈(O1108784688) @好益生崔博氏(O1393254698) @医者育儿园(O1404765544) @医者育儿百科(O1485602541) | topics: [] | category1: 亲子 | category2: 晒娃; cover: UNKNOWN | caption: 20岁大学生暑假长出“毛尾巴”，医生：别熬夜了 | topics: [] | category1: 民生资讯 | category2: 社会事件; cover: UNKNOWN | caption: 志同道合的人才会喜欢同一片风景。 | topics: [] | category1: 摄影 | category2: 主题摄影; cover: UNKNOWN | caption: 好可爱的大猫，好可爱的飞机耳#动物园最忙的老虎 | topics: [动物园最忙的老虎] | category1: 宠物 | category2: UNKNOWN; cover: 驸马不要啊 200-201 | topics: [] | category1: 二次元 | category2: 二次元酷图",
+      "profile_token_count": 833,
+      "embedding_l2_norm": 3.058614
+    }
+  ]
+}

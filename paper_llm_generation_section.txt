@@ -1,0 +1,84 @@
+========================================================
+  LLM EMBEDDING GENERATION — PAPER TEXT (concise)
+  Drop this into Section III (Methodology) or an
+  "Implementation Details" subsection.
+========================================================
+
+--- SUGGESTED PARAGRAPH ---
+
+B. LLM-Based Representation Learning
+
+Item and user embeddings were generated using the
+sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+model (sentence-transformers v5.3.0) [1], which produces
+384-dimensional vectors via mean pooling over all token
+embeddings (max sequence length: 128 tokens).
+
+Item Representations. Each video was converted to a single
+text string by concatenating available metadata fields:
+
+    "cover: <manual_cover_text> | caption: <caption> |
+     topics: <topic_tag> | category1: <first_level_category> |
+     category2: <second_level_category>"
+
+Missing fields are silently skipped. All 6,093 items in the
+KuaiRec metadata set were encoded with no fallback
+(no-description) cases, yielding an embedding matrix of
+shape (10,727 x 384) indexed by video_id.
+
+User Representations. For each of the 7,176 users we
+selected their top-20 most-watched videos (by watch_ratio,
+descending) and concatenated the corresponding item text
+strings, separated by "; ", with the prefix:
+"This user frequently watches: "
+Duplicate item descriptions were removed within each profile.
+All users had at least 20 interactions; the average number
+of unique descriptions per profile was 13.29 (out of 20).
+
+Embeddings are stored as raw float32 vectors
+(normalize_embeddings=False) because downstream models
+use MSE-based watch-ratio prediction rather than cosine
+similarity. Reproducibility is ensured by pinning the
+library version (sentence-transformers==5.3.0) and recording
+an MD5 checksum for each .npy file at generation time:
+  - item_llm_embeddings.npy  MD5: 7c68b9d11b5a950b0aac20af00e28cf7
+  - user_llm_embeddings.npy  MD5: ca2eb32b2880a4e78fb4a14f7aa49265
+
+All generation hyperparameters are stored in
+LLM-rec/config/generation_config.yaml and a full JSON
+metadata sidecar (model revision, prompt template, per-field
+statistics, and five example outputs) is written alongside
+each embedding file.
+
+--- REFERENCE TO ADD ---
+
+[1] N. Reimers and I. Gurevych, "Sentence-BERT: Sentence
+    Embeddings using Siamese BERT-Networks," in Proc. EMNLP,
+    2019. Model: paraphrase-multilingual-MiniLM-L12-v2,
+    HuggingFace Hub.
+
+========================================================
+  KEY NUMBERS AT A GLANCE (for tables / captions)
+========================================================
+
+  Encoder model      : paraphrase-multilingual-MiniLM-L12-v2
+  Library version    : sentence-transformers 5.3.0
+  Embedding dim      : 384
+  Pooling            : mean
+  Max seq length     : 128 tokens
+  Precision          : float32 (not L2-normalised)
+
+  Items encoded      : 6,093  (matrix shape 10,727 x 384)
+  Users encoded      : 7,176  (matrix shape 7,176 x 384)
+  Users below top-20 : 0
+  Avg unique descs/user : 13.29
+
+  Item prompt template:
+    "cover: <v> | caption: <v> | topics: <v> |
+     category1: <v> | category2: <v>"
+
+  User prompt template:
+    "This user frequently watches: <item1>; <item2>; ..."
+    (top-20 by watch_ratio, deduplicated)
+
+========================================================

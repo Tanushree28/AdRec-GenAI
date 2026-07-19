@@ -1,0 +1,167 @@
+{
+  "num_users": 1411,
+  "num_items": 3327,
+  "total_interactions": 196667,
+  "avg_sequence_length": 139.38128986534372,
+  "median_sequence_length": 142.0,
+  "min_sequence_length": 121,
+  "max_sequence_length": 150,
+  "top_items": [
+    {
+      "item_id": "9284",
+      "count": 450
+    },
+    {
+      "item_id": "9824",
+      "count": 448
+    },
+    {
+      "item_id": "10552",
+      "count": 446
+    },
+    {
+      "item_id": "4822",
+      "count": 446
+    },
+    {
+      "item_id": "1579",
+      "count": 434
+    },
+    {
+      "item_id": "1564",
+      "count": 429
+    },
+    {
+      "item_id": "7880",
+      "count": 424
+    },
+    {
+      "item_id": "6441",
+      "count": 417
+    },
+    {
+      "item_id": "5659",
+      "count": 409
+    },
+    {
+      "item_id": "9266",
+      "count": 409
+    },
+    {
+      "item_id": "1565",
+      "count": 407
+    },
+    {
+      "item_id": "1583",
+      "count": 406
+    },
+    {
+      "item_id": "3125",
+      "count": 401
+    },
+    {
+      "item_id": "4688",
+      "count": 395
+    },
+    {
+      "item_id": "7887",
+      "count": 391
+    },
+    {
+      "item_id": "7814",
+      "count": 391
+    },
+    {
+      "item_id": "9916",
+      "count": 390
+    },
+    {
+      "item_id": "3290",
+      "count": 386
+    },
+    {
+      "item_id": "1554",
+      "count": 386
+    },
+    {
+      "item_id": "3244",
+      "count": 385
+    }
+  ],
+  "avg_interactions_per_user": 139.38128986534372,
+  "avg_interactions_per_item": 59.112413585813044,
+  "top5_interaction_share": 0.011308455409397612,
+  "top_item_hits_all_users": false,
+  "head_item_distribution": {
+    "top_1_percent": {
+      "count": 34,
+      "share": 0.06808463036503327
+    },
+    "top_5_percent": {
+      "count": 167,
+      "share": 0.2466605988803409
+    },
+    "top_10_percent": {
+      "count": 333,
+      "share": 0.40098237121631997
+    }
+  },
+  "tail_item_distribution": {
+    "<10": {
+      "item_count": 532,
+      "interaction_share": 0.012060996506785581
+    },
+    "<5": {
+      "item_count": 280,
+      "interaction_share": 0.003411858623968434
+    },
+    "<2": {
+      "item_count": 77,
+      "interaction_share": 0.0003915247601275252
+    }
+  },
+  "long_tail_ratio": 0.012060996506785581,
+  "popularity_bias_score": 0.1882369690898829,
+  "dominant_items": [],
+  "item_entropy_bits": 10.794233461294835,
+  "item_gini": 0.550066959813504,
+  "personalization_metrics": {
+    "unique_items_last_100": {
+      "avg": 100.0,
+      "median": 100.0,
+      "min": 100,
+      "max": 100
+    },
+    "category_diversity_last_100": null,
+    "recent_30d_interaction_ratio": 1.0,
+    "item_entropy_bits": 10.794233461294835,
+    "item_gini": 0.550066959813504
+  },
+  "temporal_stats": {
+    "min_timestamp": "1970-01-01T00:00:01.593800606",
+    "max_timestamp": "1970-01-01T00:00:01.599321443",
+    "recent_30d_ratio": 1.0,
+    "timespan_days": 6.388888888888888e-08
+  },
+  "dataset_root": "/Users/tanushreenepal/Desktop/AdRec-GenAI/kuairec/data",
+  "generated_at": 1776651070.910249,
+  "transformations": [
+    {
+      "applied": true,
+      "max_sequence_length": 150,
+      "removed_interactions": 4464920,
+      "affected_users": 1411,
+      "type": "sequence_trim"
+    },
+    {
+      "applied": true,
+      "head_percent": 0.01,
+      "keep_probability": 0.3,
+      "removed_interactions": 14983,
+      "affected_items": 34,
+      "affected_users": 1275,
+      "head_items_considered": 34,
+      "type": "head_downsampling"
+    }
+  ]
+}

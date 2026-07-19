@@ -1,0 +1,30 @@
+[
+  {
+    "variant": "Baseline",
+    "tag": "baseline",
+    "best_val_loss": 0.5040972240939159,
+    "best_epoch": 9,
+    "total_epochs": 14
+  },
+  {
+    "variant": "Item-LLM",
+    "tag": "item_llm",
+    "best_val_loss": 0.5018172733668116,
+    "best_epoch": 20,
+    "total_epochs": 25
+  },
+  {
+    "variant": "User-LLM",
+    "tag": "user_llm",
+    "best_val_loss": 0.5033218241618467,
+    "best_epoch": 8,
+    "total_epochs": 13
+  },
+  {
+    "variant": "Full-LLM",
+    "tag": "full_llm",
+    "best_val_loss": 0.5031794646166284,
+    "best_epoch": 7,
+    "total_epochs": 12
+  }
+]
