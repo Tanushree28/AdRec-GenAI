@@ -23,6 +23,7 @@ from kuairec.train.dataset import (
 )
 from kuairec.test.dataset import prepare_eval_data
 from kuairec.train.model import KuaiRecModel
+from kuairec.train.model_llm import LLMKuaiRecModel
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CKPT_ROOT = PROJECT_ROOT / "kuairec" / "ckpt"
@@ -206,6 +207,32 @@ def main() -> int:
         default=None,
         help="Random seed used when recreating head-item downsampling.",
     )
+    parser.add_argument(
+        "--use-llm-emb",
+        dest="use_llm_emb",
+        action="store_true",
+        help="Load the checkpoint as an LLMKuaiRecModel (item + optional user LLM embeddings).",
+    )
+    parser.add_argument(
+        "--use-user-llm",
+        dest="use_user_llm",
+        action="store_true",
+        help="Also fuse a user LLM prefix token (requires --use-llm-emb).",
+    )
+    parser.add_argument(
+        "--item-llm-path",
+        dest="item_llm_path",
+        type=str,
+        default=None,
+        help="Path to item_llm_embeddings.npy (default: kuairec/embeddings/item_llm_embeddings.npy).",
+    )
+    parser.add_argument(
+        "--user-llm-path",
+        dest="user_llm_path",
+        type=str,
+        default=None,
+        help="Path to user_llm_embeddings.npy (default: kuairec/embeddings/user_llm_embeddings.npy).",
+    )
     args = parser.parse_args()
 
     user_supplied_root = args.dataset_root is not None
@@ -283,15 +310,40 @@ def main() -> int:
     result_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device(args.device)
-    model = KuaiRecModel(
-        num_items=data.num_items,
-        hidden_units=args.hidden_units,
-        maxlen=args.maxlen,
-        num_heads=args.num_heads,
-        num_blocks=args.num_blocks,
-        dropout_rate=args.dropout_rate,
-        norm_first=args.norm_first,
-    ).to(device)
+    if args.use_llm_emb:
+        import numpy as np
+
+        emb_root = dataset_root.parent / "embeddings"
+        item_llm_path = Path(args.item_llm_path) if args.item_llm_path else emb_root / "item_llm_embeddings.npy"
+        item_llm = torch.tensor(np.load(item_llm_path), dtype=torch.float32)
+
+        user_llm = None
+        if args.use_user_llm:
+            user_llm_path = Path(args.user_llm_path) if args.user_llm_path else emb_root / "user_llm_embeddings.npy"
+            user_llm = torch.tensor(np.load(user_llm_path), dtype=torch.float32)
+
+        model = LLMKuaiRecModel(
+            num_items=data.num_items,
+            hidden_units=args.hidden_units,
+            maxlen=args.maxlen,
+            num_heads=args.num_heads,
+            num_blocks=args.num_blocks,
+            dropout_rate=args.dropout_rate,
+            item_llm_embeddings=item_llm,
+            user_llm_embeddings=user_llm,
+            num_users=data.num_users if user_llm is not None else None,
+            norm_first=args.norm_first,
+        ).to(device)
+    else:
+        model = KuaiRecModel(
+            num_items=data.num_items,
+            hidden_units=args.hidden_units,
+            maxlen=args.maxlen,
+            num_heads=args.num_heads,
+            num_blocks=args.num_blocks,
+            dropout_rate=args.dropout_rate,
+            norm_first=args.norm_first,
+        ).to(device)
 
     state_dict = torch.load(checkpoint, map_location=device)
     try:
@@ -305,10 +357,16 @@ def main() -> int:
         raise
     model.eval()
 
-    item_embeddings = model.item_embedding.weight.detach().to(device)
+    if args.use_llm_emb:
+        with torch.no_grad():
+            all_item_ids = torch.arange(data.num_items + 1, device=device, dtype=torch.long)
+            item_embeddings = model._item_token(all_item_ids).detach()
+    else:
+        item_embeddings = model.item_embedding.weight.detach().to(device)
     item_embeddings = F.normalize(item_embeddings, dim=-1)
     user_inverse = data.user_inverse
     item_inverse = data.item_inverse
+    use_user_prefix = args.use_llm_emb and args.use_user_llm
 
     metrics_hits = 0
     metrics_ndcg = 0.0
@@ -326,8 +384,15 @@ def main() -> int:
             users = batch["user"].tolist()
             history_items = batch["history_items"]
 
-            encoded = model.encode_sequence(seq)
-            positions = lengths - 1
+            if use_user_prefix:
+                user_tensor = torch.tensor(users, device=device, dtype=torch.long)
+                encoded = model.encode_sequence(seq, user_ids=user_tensor)
+                # encode_sequence prepends a [USER] prefix token at position 0,
+                # shifting every original sequence position by +1.
+                positions = lengths - 1 + 1
+            else:
+                encoded = model.encode_sequence(seq)
+                positions = lengths - 1
             batch_indices = torch.arange(seq.size(0), device=device)
             user_repr = encoded[batch_indices, positions]
             user_repr = F.normalize(user_repr, dim=-1)
@@ -354,11 +419,16 @@ def main() -> int:
                     metrics_ndcg += 1.0 / math.log2(rank + 2)
                     hit_ranks.append(rank + 1)
 
-            for user_idx, rec_indices in zip(users, topk_indices.tolist()):
+            for user_idx, rec_indices, tgt in zip(users, topk_indices.tolist(), target.tolist()):
                 user_id = user_inverse.get(int(user_idx), str(user_idx))
                 rec_items = [item_inverse.get(int(item), str(item)) for item in rec_indices]
                 recommended_counter.update(rec_items)
-                record = {"user_id": user_id, "recommendations": rec_items}
+                record = {
+                    "user_id": user_id,
+                    "recommendations": rec_items,
+                    "target": item_inverse.get(int(tgt), str(tgt)),
+                    "hit": int(tgt) in rec_indices,
+                }
                 output_file.write(json.dumps(record) + "\n")
 
             for tgt in target.tolist():
