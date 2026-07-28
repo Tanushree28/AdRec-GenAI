@@ -383,7 +383,13 @@ def load_kuairec_data(data_dir: str | Path) -> KuaiRecData:
 class KuaiRecTrainDataset(Dataset):
     """Per-user sequence dataset for training."""
 
-    def __init__(self, data: KuaiRecData, maxlen: int, min_history: int = 2):
+    def __init__(
+        self,
+        data: KuaiRecData,
+        maxlen: int,
+        min_history: int = 2,
+        neg_sampling_power: float = 0.75,
+    ):
         self.data = data
         self.maxlen = maxlen
         self.min_history = min_history
@@ -391,6 +397,28 @@ class KuaiRecTrainDataset(Dataset):
             user_id for user_id, seq in data.user_sequences.items() if len(seq) >= min_history
         ]
         self.item_ids = set(range(1, data.num_items + 1))
+
+        # Popularity-weighted negative sampling (word2vec-style dampened frequency,
+        # power=0.75 by convention). Uniform-random negatives rarely challenge popular
+        # items, so their embeddings dominate scoring purely from appearing as
+        # positives often, regardless of true relevance ("popularity collapse").
+        # Weighting negatives toward popular items forces the model to explicitly
+        # learn to discriminate the true target from popular decoys during training.
+        item_counts = np.zeros(data.num_items + 1, dtype=np.float64)
+        for seq in data.user_sequences.values():
+            for item in seq:
+                item_counts[item] += 1
+        item_counts[0] = 0.0  # PAD is never a valid negative
+        damped = np.power(item_counts, neg_sampling_power)
+        total = damped.sum()
+        if total <= 0:
+            damped = np.ones_like(damped)
+            damped[0] = 0.0
+            total = damped.sum()
+        probs = damped / total
+        neg_cdf = np.cumsum(probs)
+        neg_cdf[-1] = 1.0  # guard against floating-point drift at the boundary
+        self._neg_cdf = neg_cdf
 
     def __len__(self) -> int:
         return len(self.user_ids)
@@ -400,9 +428,18 @@ class KuaiRecTrainDataset(Dataset):
         if len(positives_set) >= self.data.num_items:
             # Degenerate case: fall back to padding token which will be ignored by the mask.
             return 0
-        neg = np.random.randint(1, self.data.num_items + 1)
-        while neg in positives_set:
-            neg = np.random.randint(1, self.data.num_items + 1)
+        neg = int(np.searchsorted(self._neg_cdf, np.random.random(), side="left"))
+        tries = 0
+        while neg in positives_set or neg == 0:
+            neg = int(np.searchsorted(self._neg_cdf, np.random.random(), side="left"))
+            tries += 1
+            if tries > 50:
+                # Extremely small/degenerate item pool for this user; fall back to
+                # uniform sampling rather than risk spinning indefinitely.
+                neg = np.random.randint(1, self.data.num_items + 1)
+                while neg in positives_set:
+                    neg = np.random.randint(1, self.data.num_items + 1)
+                break
         return int(neg)
 
     def __getitem__(self, index: int) -> Dict[str, np.ndarray | int | Sequence[int]]:

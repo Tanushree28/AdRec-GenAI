@@ -230,6 +230,13 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--num_heads", type=int, default=1)
     parser.add_argument("--dropout_rate", type=float, default=0.2)
     parser.add_argument("--l2_emb", type=float, default=0.0)
+    parser.add_argument(
+        "--neg_sampling_power",
+        type=float,
+        default=0.75,
+        help="Exponent for popularity-weighted negative sampling (word2vec-style "
+        "dampened frequency; 0 = uniform random negatives, 1 = raw frequency).",
+    )
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--inference_only", action="store_true")
     parser.add_argument("--state_dict_path", type=str, default=None)
@@ -332,7 +339,7 @@ if __name__ == "__main__":
     with dataset_diag_path.open("w", encoding="utf-8") as diag_file:
         json.dump(dataset_diag_payload, diag_file, indent=2)
     print(f"Dataset diagnostics saved to {dataset_diag_path}")
-    dataset = KuaiRecTrainDataset(data, maxlen=args.maxlen)
+    dataset = KuaiRecTrainDataset(data, maxlen=args.maxlen, neg_sampling_power=args.neg_sampling_power)
 
     if len(dataset) < 2:
         raise ValueError(
