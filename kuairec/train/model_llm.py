@@ -32,6 +32,7 @@ class LLMKuaiRecModel(KuaiRecModel):
         dropout_rate: float,
         item_llm_embeddings: torch.Tensor,
         user_llm_embeddings: Optional[torch.Tensor] = None,
+        num_users: Optional[int] = None,
         norm_first: bool = False,
     ) -> None:
         super().__init__(
@@ -44,16 +45,15 @@ class LLMKuaiRecModel(KuaiRecModel):
             norm_first=norm_first,
         )
 
-        # Frozen item LLM embeddings  [n_items+1, llm_dim]
-        llm_dim = item_llm_embeddings.shape[1]
-        n_rows = item_llm_embeddings.shape[0]
-        # Pad with a zero row for padding_idx=0 if needed
-        if n_rows < num_items + 1:
-            pad = torch.zeros(num_items + 1 - n_rows, llm_dim, dtype=item_llm_embeddings.dtype)
-            item_llm_embeddings = torch.cat([item_llm_embeddings, pad], dim=0)
-        elif n_rows > num_items + 1:
-            item_llm_embeddings = item_llm_embeddings[: num_items + 1]
+        # item_llm_embeddings.npy is indexed by the RAW 0-based item id (row i =
+        # item whose raw id is i), but this model's item ids are reindexed 1..num_items
+        # with 0 reserved for PAD (see kuairec/train/dataset.py: reid = idx + 1).
+        # So row i of the raw array belongs at buffer index i + 1, not index i —
+        # prepend a zero PAD row rather than appending, or every id is off by one
+        # and the highest-id item silently gets no embedding at all.
+        item_llm_embeddings = self._align_to_reindexed_ids(item_llm_embeddings, num_items)
         self.register_buffer("item_llm", item_llm_embeddings)
+        llm_dim = item_llm_embeddings.shape[1]
 
         # Project [id_emb || llm_emb] → hidden_units
         self.item_proj = nn.Linear(hidden_units + llm_dim, hidden_units, bias=False)
@@ -61,14 +61,32 @@ class LLMKuaiRecModel(KuaiRecModel):
         # Optional user LLM prefix token
         self.use_user_llm = user_llm_embeddings is not None
         if self.use_user_llm:
+            if num_users is None:
+                raise ValueError("num_users is required when user_llm_embeddings is provided")
+            # Same raw-id -> reindexed-id (+1) alignment issue as item_llm above.
+            user_llm_embeddings = self._align_to_reindexed_ids(user_llm_embeddings, num_users)
             user_llm_dim = user_llm_embeddings.shape[1]
-            n_user_rows = user_llm_embeddings.shape[0]
             self.register_buffer("user_llm", user_llm_embeddings)
             self.user_llm_proj = nn.Linear(user_llm_dim, hidden_units, bias=False)
             # Position embedding has maxlen slots; we need one extra for the prefix
             self.prefix_position_emb = nn.Embedding(1, hidden_units)
         else:
             self.user_llm = None
+
+    @staticmethod
+    def _align_to_reindexed_ids(embeddings: torch.Tensor, num_ids: int) -> torch.Tensor:
+        """Shift a raw-0-indexed embedding table onto reid space (PAD=0, ids 1..num_ids)."""
+        n_rows = embeddings.shape[0]
+        dim = embeddings.shape[1]
+        if n_rows == num_ids:
+            pad_row = torch.zeros(1, dim, dtype=embeddings.dtype)
+            embeddings = torch.cat([pad_row, embeddings], dim=0)
+        elif n_rows < num_ids + 1:
+            pad = torch.zeros(num_ids + 1 - n_rows, dim, dtype=embeddings.dtype)
+            embeddings = torch.cat([embeddings, pad], dim=0)
+        elif n_rows > num_ids + 1:
+            embeddings = embeddings[: num_ids + 1]
+        return embeddings
 
     # ------------------------------------------------------------------
     # Override encode_sequence to fuse LLM embeddings

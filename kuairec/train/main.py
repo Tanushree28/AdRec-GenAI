@@ -382,6 +382,7 @@ if __name__ == "__main__":
             dropout_rate=args.dropout_rate,
             item_llm_embeddings=item_llm,
             user_llm_embeddings=user_llm,
+            num_users=data.num_users if user_llm is not None else None,
             norm_first=args.norm_first,
         ).to(device)
         print(f"Using LLMKuaiRecModel (user_prefix={'yes' if args.use_user_llm else 'no'})")
